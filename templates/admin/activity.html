@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Activity Logs - SmartPark Admin{% endblock %}
+
+{% block content %}
+<div class="dashboard-layout">
+  
+  <div class="sidebar">
+    <div class="sidebar-heading">ADMINISTRATION</div>
+    <ul class="sidebar-menu">
+      <li><a href="{{ url_for('admin.dashboard') }}" class="sidebar-link"><i class="fa-solid fa-gauge"></i> Dashboard Overview</a></li>
+      <li><a href="{{ url_for('admin.locations') }}" class="sidebar-link"><i class="fa-solid fa-location-dot"></i> Parking Locations</a></li>
+      <li><a href="{{ url_for('admin.bookings') }}" class="sidebar-link"><i class="fa-solid fa-calendar-days"></i> All Bookings</a></li>
+      <li><a href="{{ url_for('admin.computer_vision') }}" class="sidebar-link"><i class="fa-solid fa-camera"></i> Computer Vision AI</a></li>
+      <li><a href="{{ url_for('admin.users') }}" class="sidebar-link"><i class="fa-solid fa-users"></i> User Directory</a></li>
+      <li><a href="{{ url_for('admin.activity') }}" class="sidebar-link active"><i class="fa-solid fa-list-check"></i> Activity Audit Logs</a></li>
+      <li><a href="{{ url_for('admin.reports') }}" class="sidebar-link"><i class="fa-solid fa-chart-line"></i> Revenue & Reports</a></li>
+      <li><a href="{{ url_for('admin.settings') }}" class="sidebar-link"><i class="fa-solid fa-gears"></i> System & Blacklist</a></li>
+    </ul>
+  </div>
+
+  <div class="main-content">
+    
+    <div style="margin-bottom: 28px;">
+      <h1>System Activity & Audit Trail</h1>
+      <p style="color: var(--text-muted);">Immutable audit log of logins, bookings, gate scans, and admin actions</p>
+    </div>
+
+    <div class="glass-card" style="padding: 24px;">
+      <div style="overflow-x: auto;">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Actor</th>
+              <th>Action Code</th>
+              <th>Description Details</th>
+              <th>IP Address</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for act in activities %}
+              <tr>
+                <td>{{ act.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                <td><span class="badge {% if act.user_type == 'admin' %}badge-danger{% elif act.user_type == 'user' %}badge-info{% else %}badge-warning{% endif %}">{{ act.user_type }}</span></td>
+                <td><strong>{{ act.action }}</strong></td>
+                <td>{{ act.description }}</td>
+                <td><span style="font-family: monospace; font-size: 0.8rem; color: var(--text-muted);">{{ act.ip_address or '127.0.0.1' }}</span></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

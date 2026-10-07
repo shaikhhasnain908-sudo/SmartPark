@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Computer Vision AI Monitor - SmartPark Admin{% endblock %}
+
+{% block content %}
+<div class="dashboard-layout">
+  
+  <div class="sidebar">
+    <div class="sidebar-heading">ADMINISTRATION</div>
+    <ul class="sidebar-menu">
+      <li><a href="{{ url_for('admin.dashboard') }}" class="sidebar-link"><i class="fa-solid fa-gauge"></i> Dashboard Overview</a></li>
+      <li><a href="{{ url_for('admin.locations') }}" class="sidebar-link"><i class="fa-solid fa-location-dot"></i> Parking Locations</a></li>
+      <li><a href="{{ url_for('admin.bookings') }}" class="sidebar-link"><i class="fa-solid fa-calendar-days"></i> All Bookings</a></li>
+      <li><a href="{{ url_for('admin.computer_vision') }}" class="sidebar-link active"><i class="fa-solid fa-camera"></i> Computer Vision AI</a></li>
+      <li><a href="{{ url_for('admin.users') }}" class="sidebar-link"><i class="fa-solid fa-users"></i> User Directory</a></li>
+      <li><a href="{{ url_for('admin.activity') }}" class="sidebar-link"><i class="fa-solid fa-list-check"></i> Activity Audit Logs</a></li>
+      <li><a href="{{ url_for('admin.reports') }}" class="sidebar-link"><i class="fa-solid fa-chart-line"></i> Revenue & Reports</a></li>
+      <li><a href="{{ url_for('admin.settings') }}" class="sidebar-link"><i class="fa-solid fa-gears"></i> System & Blacklist</a></li>
+    </ul>
+  </div>
+
+  <div class="main-content">
+    
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px;">
+      <div>
+        <h1>Computer Vision AI & ANPR Gate Control</h1>
+        <p style="color: var(--text-muted);">Real-time OpenCV, EasyOCR & YOLO vehicle plate detection pipeline</p>
+      </div>
+    </div>
+
+    <!-- Video Monitor & Simulation Console -->
+    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 32px;">
+      
+      <!-- Live Video Monitor -->
+      <div class="glass-card" style="padding: 20px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+          <h3 style="font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-circle" style="color: var(--danger); font-size: 0.7rem; animation: pulse 1.5s infinite;"></i>
+            Camera Feed: Central Entry ANPR Cam
+          </h3>
+          <span class="badge badge-success">ONLINE</span>
+        </div>
+
+        <div style="position: relative; background: #000; height: 380px; border-radius: var(--radius-sm); overflow: hidden; display: flex; align-items: center; justify-content: center;">
+          <video id="admin-cv-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
+          
+          <div style="position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 4px; font-family: monospace; font-size: 0.78rem; color: #34d399;">
+            REC [1080p] | OpenCV v4.10 | EasyOCR
+          </div>
+
+          <div style="position: absolute; border: 2px dashed #06b6d4; width: 50%; height: 30%; border-radius: 6px; pointer-events: none; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px; font-size: 0.75rem; color: #06b6d4; font-weight: 700;">
+            ANPR ROI DETECTION BOX
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-top: 16px;">
+          <button onclick="startAdminCam()" class="btn btn-primary" style="padding: 8px 16px; font-size: 0.85rem;"><i class="fa-solid fa-video"></i> Start Feed</button>
+          <button onclick="stopCameraStream()" class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.85rem;"><i class="fa-solid fa-video-slash"></i> Stop Feed</button>
+        </div>
+      </div>
+
+      <!-- ANPR Simulator Panel for Presentation -->
+      <div class="glass-card" style="padding: 20px; background: rgba(15, 23, 42, 0.9);">
+        <h3 style="font-size: 1.1rem; margin-bottom: 16px; color: var(--accent-cyan);">
+          <i class="fa-solid fa-terminal"></i> Gate ANPR Simulator
+        </h3>
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 20px;">
+          Simulate ANPR vehicle arrival/departure for college live demo presentation.
+        </p>
+
+        <div class="form-group">
+          <label>Target Parking Location</label>
+          <select id="sim_location_id" class="form-control">
+            {% for loc in locations %}
+              <option value="{{ loc.id }}">{{ loc.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Vehicle License Plate</label>
+          <input type="text" id="sim_plate_number" class="form-control" value="GJ09AB1234" style="text-transform: uppercase;">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px;">
+          <button onclick="triggerSimANPR('ENTRY')" class="btn btn-success" style="padding: 10px; font-size: 0.85rem;">
+            <i class="fa-solid fa-right-to-bracket"></i> Simulate Entry
+          </button>
+          <button onclick="triggerSimANPR('EXIT')" class="btn btn-danger" style="padding: 10px; font-size: 0.85rem;">
+            <i class="fa-solid fa-right-from-bracket"></i> Simulate Exit
+          </button>
+        </div>
+
+        <!-- Simulation Output Box -->
+        <div id="sim-output-box" style="margin-top: 20px; padding: 14px; border-radius: var(--radius-sm); background: rgba(30, 41, 59, 0.6); display: none; font-size: 0.85rem;">
+          <div style="font-weight: 700; color: var(--success); margin-bottom: 4px;" id="sim-out-title"></div>
+          <div style="color: var(--text-muted);" id="sim-out-msg"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ANPR Logs Table -->
+    <div class="glass-card" style="padding: 24px;">
+      <h3 style="font-size: 1.15rem; margin-bottom: 16px;"><i class="fa-solid fa-list"></i> Recent ANPR Detection Log Stream</h3>
+
+      <div style="overflow-x: auto;">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Detected Plate</th>
+              <th>Confidence</th>
+              <th>Action Result</th>
+              <th>Location</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in recent_anpr %}
+              <tr>
+                <td>{{ log.timestamp.strftime('%H:%M:%S | %b %d') }}</td>
+                <td><strong style="color: var(--accent-cyan); font-size: 1.05rem;">{{ log.detected_plate }}</strong></td>
+                <td>{{ "%.2f"|format(log.confidence * 100) }}%</td>
+                <td>
+                  <span class="badge {% if log.action_taken == 'ENTRY_GRANTED' or log.action_taken == 'EXIT_COMPLETED' %}badge-success{% elif log.action_taken == 'BLACKLISTED' %}badge-danger{% else %}badge-warning{% endif %}">
+                    {{ log.action_taken }}
+                  </span>
+                </td>
+                <td>{{ log.location.name if log.location else 'N/A' }}</td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 16px;">No camera detection logs recorded yet.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function startAdminCam() {
+    startCameraStream('admin-cv-video', (success, err) => {
+      if (success) showToast("Camera Stream Active", "Live ANPR video feed established.", "success");
+      else showToast("Camera Error", err, "danger");
+    });
+  }
+
+  function triggerSimANPR(cameraType) {
+    const locationId = document.getElementById('sim_location_id').value;
+    const plateNumber = document.getElementById('sim_plate_number').value.trim();
+
+    fetch('/api/cv/simulate-anpr', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        location_id: locationId,
+        plate_number: plateNumber,
+        camera_type: cameraType
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      const box = document.getElementById('sim-output-box');
+      const title = document.getElementById('sim-out-title');
+      const msg = document.getElementById('sim-out-msg');
+
+      box.style.display = 'block';
+      title.innerText = data.message;
+      msg.innerText = `Plate: ${plateNumber} | Action: ${data.data ? data.data.action : 'N/A'}`;
+
+      showToast("ANPR Simulation Event", data.message, data.success ? "success" : "warning");
+    });
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}System & Blacklist - SmartPark Admin{% endblock %}
+
+{% block content %}
+<div class="dashboard-layout">
+  
+  <div class="sidebar">
+    <div class="sidebar-heading">ADMINISTRATION</div>
+    <ul class="sidebar-menu">
+      <li><a href="{{ url_for('admin.dashboard') }}" class="sidebar-link"><i class="fa-solid fa-gauge"></i> Dashboard Overview</a></li>
+      <li><a href="{{ url_for('admin.locations') }}" class="sidebar-link"><i class="fa-solid fa-location-dot"></i> Parking Locations</a></li>
+      <li><a href="{{ url_for('admin.bookings') }}" class="sidebar-link"><i class="fa-solid fa-calendar-days"></i> All Bookings</a></li>
+      <li><a href="{{ url_for('admin.computer_vision') }}" class="sidebar-link"><i class="fa-solid fa-camera"></i> Computer Vision AI</a></li>
+      <li><a href="{{ url_for('admin.users') }}" class="sidebar-link"><i class="fa-solid fa-users"></i> User Directory</a></li>
+      <li><a href="{{ url_for('admin.activity') }}" class="sidebar-link"><i class="fa-solid fa-list-check"></i> Activity Audit Logs</a></li>
+      <li><a href="{{ url_for('admin.reports') }}" class="sidebar-link"><i class="fa-solid fa-chart-line"></i> Revenue & Reports</a></li>
+      <li><a href="{{ url_for('admin.settings') }}" class="sidebar-link active"><i class="fa-solid fa-gears"></i> System & Blacklist</a></li>
+    </ul>
+  </div>
+
+  <div class="main-content">
+    
+    <div style="margin-bottom: 28px;">
+      <h1>System Configuration & Blacklist</h1>
+      <p style="color: var(--text-muted);">Manage security blacklists, ANPR threshold rules, and rate defaults</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 32px;">
+      
+      <!-- Blacklist Form -->
+      <div class="glass-card" style="padding: 24px;">
+        <h3 style="font-size: 1.15rem; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 10px; color: var(--danger);">
+          <i class="fa-solid fa-triangle-exclamation"></i> Blacklist Vehicle
+        </h3>
+
+        <form method="POST" action="{{ url_for('admin.settings') }}">
+          <input type="hidden" name="action" value="add_blacklist">
+
+          <div class="form-group">
+            <label>Vehicle License Plate</label>
+            <input type="text" name="vehicle_number" class="form-control" placeholder="GJ01XX9999" style="text-transform: uppercase;" required>
+          </div>
+
+          <div class="form-group">
+            <label>Reason for Blacklisting</label>
+            <textarea name="reason" class="form-control" rows="3" placeholder="Non-payment violation / security risk..." required></textarea>
+          </div>
+
+          <button type="submit" class="btn btn-danger" style="width: 100%; padding: 12px;">
+            Add to Blacklist
+          </button>
+        </form>
+      </div>
+
+      <!-- Blacklist Table -->
+      <div class="glass-card" style="padding: 24px;">
+        <h3 style="font-size: 1.15rem; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
+          <i class="fa-solid fa-shield-cat"></i> Active Blacklisted Vehicles ({{ blacklist_items | length }})
+        </h3>
+
+        <div style="overflow-x: auto;">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Vehicle No</th>
+                <th>Reason</th>
+                <th>Added By</th>
+                <th>Date</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in blacklist_items %}
+                <tr>
+                  <td><strong style="color: var(--danger); font-size: 1.05rem;">{{ item.vehicle_number }}</strong></td>
+                  <td>{{ item.reason }}</td>
+                  <td>{{ item.added_by }}</td>
+                  <td>{{ item.created_at.strftime('%b %d, %Y') }}</td>
+                  <td>
+                    <form method="POST" action="{{ url_for('admin.settings') }}">
+                      <input type="hidden" name="action" value="remove_blacklist">
+                      <input type="hidden" name="blacklist_id" value="{{ item.id }}">
+                      <button type="submit" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;">Remove</button>
+                    </form>
+                  </td>
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 16px;">No vehicles currently blacklisted.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

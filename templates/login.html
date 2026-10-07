@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}User Login - SmartPark{% endblock %}
+
+{% block content %}
+<div class="container" style="display: flex; align-items: center; justify-content: center; min-height: 75vh; padding-top: 30px;">
+  
+  <div class="glass-card" style="width: 100%; max-width: 440px; padding: 40px; background: rgba(15, 23, 42, 0.85);">
+    
+    <div style="text-align: center; margin-bottom: 32px;">
+      <i class="fa-solid fa-square-parking" style="font-size: 3rem; color: var(--primary); margin-bottom: 12px;"></i>
+      <h2 style="font-size: 1.8rem; font-weight: 800; color: #fff;">SMARTPARK</h2>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 4px;">Welcome Back</p>
+    </div>
+
+    <form method="POST" action="{{ url_for('auth.user_login') }}">
+      
+      <div class="form-group">
+        <label for="email"><i class="fa-solid fa-envelope"></i> Email Address</label>
+        <input type="email" id="email" name="email" class="form-control" placeholder="user@email.com" value="{{ email or '' }}" required autofocus>
+      </div>
+
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <label for="password" style="margin-bottom:0;"><i class="fa-solid fa-lock"></i> Password</label>
+          <a href="#" onclick="alert('Please contact support@smartpark.com to reset password.')" style="font-size:0.8rem; color:var(--primary);">Forgot Password?</a>
+        </div>
+        <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px; margin-top: 8px; font-size: 1rem;">
+        <i class="fa-solid fa-right-to-bracket"></i> Login
+      </button>
+
+    </form>
+
+    <div style="text-align: center; margin-top: 24px; font-size: 0.9rem; color: var(--text-muted);">
+      Don't have an account? <a href="{{ url_for('auth.register') }}" style="font-weight: 600; color: var(--primary);">Create Account</a>
+    </div>
+
+    <div style="text-align: center; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 0.8rem;">
+      <a href="{{ url_for('auth.admin_login') }}" style="color: var(--text-dark);"><i class="fa-solid fa-user-shield"></i> Are you an Administrator? Login here</a>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

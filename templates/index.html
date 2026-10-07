@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}SmartPark - AI-Powered Smart Parking Management System{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top: 40px; padding-bottom: 60px;">
+  
+  <!-- Hero Banner -->
+  <div class="glass-card" style="padding: 60px 40px; text-align: center; background: radial-gradient(circle at top, rgba(59, 130, 246, 0.15) 0%, rgba(15, 23, 42, 0.8) 100%); margin-bottom: 48px;">
+    <span class="badge badge-info" style="margin-bottom: 16px; font-size: 0.85rem;"><i class="fa-solid fa-wand-magic-sparkles"></i> AI & Computer Vision Powered</span>
+    <h1 style="font-size: 3.2rem; margin-bottom: 16px; font-weight: 800; line-height: 1.15;">
+      Find. Book. Park. <span style="background: linear-gradient(135deg, #60a5fa 0%, #06b6d4 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Smart.</span>
+    </h1>
+    <p style="font-size: 1.2rem; color: var(--text-muted); max-width: 680px; margin: 0 auto 32px;">
+      Experience seamless automated parking with real-time slot tracking, AI ANPR license plate recognition, and instant digital billing.
+    </p>
+
+    <div style="display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap;">
+      <a href="{{ url_for('user.find_parking') }}" class="btn btn-primary" style="padding: 14px 28px; font-size: 1.05rem;">
+        <i class="fa-solid fa-magnifying-glass-location"></i> Find Nearby Parking
+      </a>
+      <a href="{{ url_for('auth.register') }}" class="btn btn-secondary" style="padding: 14px 28px; font-size: 1.05rem;">
+        <i class="fa-solid fa-user-plus"></i> Create Account
+      </a>
+    </div>
+  </div>
+
+  <!-- Real-time Stats Highlights -->
+  <div class="kpi-grid">
+    <div class="glass-card kpi-card">
+      <div>
+        <div class="kpi-title">Active Locations</div>
+        <div class="kpi-value">3 Hubs</div>
+      </div>
+      <div class="kpi-icon"><i class="fa-solid fa-location-dot"></i></div>
+    </div>
+
+    <div class="glass-card kpi-card">
+      <div>
+        <div class="kpi-title">Total Smart Slots</div>
+        <div class="kpi-value">48 Slots</div>
+      </div>
+      <div class="kpi-icon"><i class="fa-solid fa-square-parking"></i></div>
+    </div>
+
+    <div class="glass-card kpi-card">
+      <div>
+        <div class="kpi-title">AI Camera ANPR</div>
+        <div class="kpi-value">OpenCV + OCR</div>
+      </div>
+      <div class="kpi-icon" style="color:var(--success); background:rgba(16,185,129,0.15);"><i class="fa-solid fa-camera"></i></div>
+    </div>
+
+    <div class="glass-card kpi-card">
+      <div>
+        <div class="kpi-title">Instant Billing</div>
+        <div class="kpi-value">PDF Invoices</div>
+      </div>
+      <div class="kpi-icon" style="color:var(--warning); background:rgba(245,158,11,0.15);"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+    </div>
+  </div>
+
+  <!-- Featured Parking Locations -->
+  <div style="margin-top: 48px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px;">
+      <div>
+        <h2>Available Parking Hubs</h2>
+        <p style="color: var(--text-muted); font-size: 0.95rem;">Select a location to check live slot status and reserve instantly</p>
+      </div>
+      <a href="{{ url_for('user.find_parking') }}" class="btn btn-secondary"><i class="fa-solid fa-map"></i> View Map</a>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
+      {% for loc in locations %}
+        <div class="glass-card" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+              <h3 style="font-size: 1.25rem;">{{ loc.name }}</h3>
+              <span class="badge badge-success">OPEN</span>
+            </div>
+            <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px;"><i class="fa-solid fa-location-dot" style="color: var(--primary);"></i> {{ loc.address }}</p>
+            
+            <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 0.9rem;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--text-muted);">Available Slots:</span>
+                <strong style="color: var(--success);">{{ loc.available_slots }} / {{ loc.total_slots }}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span style="color: var(--text-muted);">Hourly Rate:</span>
+                <strong style="color: #fff;">₹{{ loc.hourly_rate }}/hr</strong>
+              </div>
+            </div>
+          </div>
+
+          <a href="{{ url_for('user.book_slot', location_id=loc.id) }}" class="btn btn-primary" style="width: 100%;">
+            <i class="fa-solid fa-calendar-check"></i> Reserve Slot
+          </a>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

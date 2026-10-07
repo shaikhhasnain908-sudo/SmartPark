@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}User Registration - SmartPark{% endblock %}
+
+{% block content %}
+<div class="container" style="display: flex; align-items: center; justify-content: center; min-height: 80vh; padding-top: 30px; padding-bottom: 40px;">
+  
+  <div class="glass-card" style="width: 100%; max-width: 520px; padding: 40px; background: rgba(15, 23, 42, 0.85);">
+    
+    <div style="text-align: center; margin-bottom: 28px;">
+      <i class="fa-solid fa-user-plus" style="font-size: 2.5rem; color: var(--primary); margin-bottom: 12px;"></i>
+      <h2 style="font-size: 1.8rem; font-weight: 800; color: #fff;">SMARTPARK</h2>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 4px;">Create your SmartPark account</p>
+    </div>
+
+    <form method="POST" action="{{ url_for('auth.register') }}">
+      
+      <div class="form-group">
+        <label for="full_name"><i class="fa-solid fa-user"></i> Full Name</label>
+        <input type="text" id="full_name" name="full_name" class="form-control" placeholder="Hasnain Shaikh" value="{{ full_name or '' }}" required>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="form-group">
+          <label for="email"><i class="fa-solid fa-envelope"></i> Email Address</label>
+          <input type="email" id="email" name="email" class="form-control" placeholder="user@email.com" value="{{ email or '' }}" required>
+        </div>
+
+        <div class="form-group">
+          <label for="phone"><i class="fa-solid fa-phone"></i> Mobile Number</label>
+          <input type="tel" id="phone" name="phone" class="form-control" placeholder="+91 9876543210" value="{{ phone or '' }}">
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="form-group">
+          <label for="password"><i class="fa-solid fa-lock"></i> Password</label>
+          <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required>
+        </div>
+
+        <div class="form-group">
+          <label for="confirm_password"><i class="fa-solid fa-check-double"></i> Confirm Password</label>
+          <input type="password" id="confirm_password" name="confirm_password" class="form-control" placeholder="••••••••" required>
+        </div>
+      </div>
+
+      <div style="background: rgba(30, 41, 59, 0.5); padding: 16px; border-radius: var(--radius-sm); margin-bottom: 20px; border: 1px solid var(--border);">
+        <div style="font-size: 0.85rem; font-weight: 700; color: var(--accent-cyan); margin-bottom: 12px;">
+          <i class="fa-solid fa-car"></i> Primary Vehicle Info (Optional)
+        </div>
+
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px;">
+          <div>
+            <input type="text" name="vehicle_number" class="form-control" placeholder="GJ09AB1234" value="{{ vehicle_number or '' }}" style="text-transform: uppercase;">
+          </div>
+          <div>
+            <select name="vehicle_type" class="form-control">
+              <option value="Car">Car</option>
+              <option value="SUV">SUV</option>
+              <option value="Bike">Bike</option>
+              <option value="Electric">Electric</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 1rem;">
+        <i class="fa-solid fa-user-check"></i> Register Account
+      </button>
+
+    </form>
+
+    <div style="text-align: center; margin-top: 20px; font-size: 0.9rem; color: var(--text-muted);">
+      Already have an account? <a href="{{ url_for('auth.user_login') }}" style="font-weight: 600; color: var(--primary);">Login</a>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

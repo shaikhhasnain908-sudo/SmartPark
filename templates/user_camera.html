@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block title %}ANPR Camera Scanner - SmartPark{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top: 30px; padding-bottom: 60px;">
+  
+  <div style="margin-bottom: 24px; text-align: center;">
+    <h1>ANPR Vehicle Camera Scanner</h1>
+    <p style="color: var(--text-muted);">Real-time OpenCV & EasyOCR license plate recognition for automated parking verification</p>
+  </div>
+
+  <div style="max-width: 680px; margin: 0 auto;">
+    
+    <div class="glass-card" style="padding: 24px; text-align: center;">
+      
+      <!-- Target Location Picker -->
+      <div class="form-group" style="max-width: 380px; margin: 0 auto 16px;">
+        <label style="color: var(--accent-cyan); font-weight:700;"><i class="fa-solid fa-location-dot"></i> Select Entrance Gate</label>
+        <select id="user_cam_location_id" class="form-control">
+          {% for loc in locations %}
+            <option value="{{ loc.id }}">{{ loc.name }} Gate</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Video Element -->
+      <div style="position: relative; background: #000; border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 20px; height: 380px; display: flex; align-items: center; justify-content: center;">
+        <video id="webcam-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
+        
+        <!-- Bounding Box / Scan Reticle Overlay -->
+        <div id="scan-overlay" style="position: absolute; border: 2px dashed var(--accent-cyan); width: 60%; height: 35%; border-radius: 8px; box-shadow: 0 0 15px rgba(6,186,212,0.4); display: flex; align-items: center; justify-content: center; color: var(--accent-cyan); font-weight: 700; font-size: 0.85rem; pointer-events: none;">
+          ALIGN LICENSE PLATE HERE
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div style="display: flex; justify-content: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap;">
+        <button onclick="startCam()" class="btn btn-primary">
+          <i class="fa-solid fa-video"></i> Start Camera
+        </button>
+        <button onclick="stopCam()" class="btn btn-secondary">
+          <i class="fa-solid fa-video-slash"></i> Stop Camera
+        </button>
+        <button onclick="triggerScan()" id="scan-btn" class="btn btn-success" disabled>
+          <i class="fa-solid fa-expand"></i> Manual Scan
+        </button>
+        <button onclick="toggleAutoScan()" id="auto-scan-btn" class="btn btn-secondary" disabled>
+          <i class="fa-solid fa-robot"></i> Auto-Scan: OFF
+        </button>
+      </div>
+
+      <!-- Scan Result Display -->
+      <div id="scan-result-card" style="display: none; background: rgba(30, 41, 59, 0.7); padding: 18px; border-radius: var(--radius-sm); border: 1px solid var(--border); text-align: left;">
+        <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-cyan); margin-bottom: 8px;">AUTOMATED ANPR RESULT</div>
+        <div id="result-status-msg" style="font-size: 1.1rem; font-weight: 700; color: #fff;"></div>
+        <div id="result-details" style="font-size: 0.88rem; color: var(--text-muted); margin-top: 6px;"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  let autoScanEnabled = false;
+
+  function startCam() {
+    startCameraStream('webcam-video', (success, err) => {
+      if (success) {
+        document.getElementById('scan-btn').disabled = false;
+        document.getElementById('auto-scan-btn').disabled = false;
+        showToast("Camera Active", "Webcam feed initialized.", "success");
+      } else {
+        showToast("Camera Error", err || "Permission denied", "danger");
+      }
+    });
+  }
+
+  function stopCam() {
+    stopCameraStream();
+    autoScanEnabled = false;
+    document.getElementById('scan-btn').disabled = true;
+    const autoBtn = document.getElementById('auto-scan-btn');
+    autoBtn.disabled = true;
+    autoBtn.innerText = "Auto-Scan: OFF";
+    autoBtn.classList.remove('btn-success');
+    autoBtn.classList.add('btn-secondary');
+    showToast("Camera Stopped", "Camera stream released.", "info");
+  }
+
+  function updateResultUI(success, msg, data) {
+    const card = document.getElementById('scan-result-card');
+    const msgEl = document.getElementById('result-status-msg');
+    const detailsEl = document.getElementById('result-details');
+
+    card.style.display = 'block';
+    msgEl.innerText = msg;
+    
+    if (data) {
+      detailsEl.innerHTML = `
+        Detected Plate: <strong style="color:var(--primary); font-size:1.15rem;">${data.plate}</strong><br/>
+        Action Taken: <strong style="color:${data.action === 'ENTRY_GRANTED' ? 'var(--success)' : 'var(--warning)'};">${data.action}</strong> | Slot: <strong>${data.slot_number || 'N/A'}</strong>
+      `;
+    }
+  }
+
+  function triggerScan() {
+    const locId = document.getElementById('user_cam_location_id').value;
+    showToast("ANPR Scanning", "Processing frame with OpenCV...", "info");
+    
+    scanFrameForANPR(locId, 'ENTRY', (success, msg, data) => {
+      updateResultUI(success, msg, data);
+      showToast("ANPR Result", msg, success ? "success" : "warning");
+    });
+  }
+
+  function toggleAutoScan() {
+    const autoBtn = document.getElementById('auto-scan-btn');
+    const locId = document.getElementById('user_cam_location_id').value;
+
+    if (!autoScanEnabled) {
+      autoScanEnabled = true;
+      autoBtn.innerText = "Auto-Scan: ON 🟢";
+      autoBtn.classList.remove('btn-secondary');
+      autoBtn.classList.add('btn-success');
+
+      startAutoANPRScan(locId, 'ENTRY', (success, msg, data) => {
+        updateResultUI(success, msg, data);
+      });
+      showToast("Auto-Scan Loop", "Continuous ANPR scanning active (2s interval)", "success");
+    } else {
+      autoScanEnabled = false;
+      autoBtn.innerText = "Auto-Scan: OFF";
+      autoBtn.classList.remove('btn-success');
+      autoBtn.classList.add('btn-secondary');
+
+      stopAutoANPRScan();
+      showToast("Auto-Scan Stopped", "Manual mode enabled", "info");
+    }
+  }
+</script>
+{% endblock %}

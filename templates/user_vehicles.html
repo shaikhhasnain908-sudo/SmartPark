@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}My Vehicles - SmartPark{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top: 30px; padding-bottom: 60px;">
+  
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px;">
+    <div>
+      <h1>My Registered Vehicles</h1>
+      <p style="color: var(--text-muted);">Manage vehicles associated with your SmartPark account</p>
+    </div>
+    
+    <a href="{{ url_for('user.dashboard') }}" class="btn btn-secondary">
+      <i class="fa-solid fa-arrow-left"></i> Dashboard
+    </a>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 32px;">
+    
+    <!-- Add Vehicle Form -->
+    <div class="glass-card" style="padding: 24px;">
+      <h3 style="font-size: 1.2rem; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
+        <i class="fa-solid fa-plus-circle"></i> Add New Vehicle
+      </h3>
+
+      <form method="POST" action="{{ url_for('user.my_vehicles') }}">
+        <div class="form-group">
+          <label for="vehicle_number"><i class="fa-solid fa-id-card"></i> Vehicle License Plate</label>
+          <input type="text" id="vehicle_number" name="vehicle_number" class="form-control" placeholder="GJ09AB1234" style="text-transform: uppercase;" required>
+        </div>
+
+        <div class="form-group">
+          <label for="vehicle_type"><i class="fa-solid fa-car-side"></i> Vehicle Type</label>
+          <select id="vehicle_type" name="vehicle_type" class="form-control">
+            <option value="Car">Car</option>
+            <option value="SUV">SUV</option>
+            <option value="Bike">Bike</option>
+            <option value="Electric">Electric</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="model"><i class="fa-solid fa-car"></i> Make / Model</label>
+          <input type="text" id="model" name="model" class="form-control" placeholder="Hyundai i20">
+        </div>
+
+        <div class="form-group">
+          <label for="nickname"><i class="fa-solid fa-tag"></i> Nickname</label>
+          <input type="text" id="nickname" name="nickname" class="form-control" placeholder="My Daily Car">
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;">
+          <i class="fa-solid fa-check"></i> Save Vehicle
+        </button>
+      </form>
+    </div>
+
+    <!-- Vehicles List -->
+    <div class="glass-card" style="padding: 24px;">
+      <h3 style="font-size: 1.2rem; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
+        <i class="fa-solid fa-car"></i> Saved Vehicles ({{ vehicles | length }})
+      </h3>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px;">
+        {% for v in vehicles %}
+          <div style="background: rgba(30, 41, 59, 0.6); padding: 18px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span class="badge badge-info">{{ v.vehicle_type }}</span>
+              <span style="font-size: 0.8rem; color: var(--text-muted);">{{ v.nickname or 'Vehicle' }}</span>
+            </div>
+            <div style="font-size: 1.4rem; font-weight: 800; color: #fff; letter-spacing: 0.05em; margin-bottom: 4px;">{{ v.vehicle_number }}</div>
+            <div style="font-size: 0.85rem; color: var(--text-muted);">{{ v.model or 'N/A' }}</div>
+          </div>
+        {% else %}
+          <p style="color: var(--text-muted);">No vehicles added yet.</p>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

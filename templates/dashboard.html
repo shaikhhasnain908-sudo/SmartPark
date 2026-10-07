@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}User Dashboard - SmartPark{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top: 30px; padding-bottom: 60px;">
+  
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px;">
+    <div>
+      <h1 style="font-size: 2rem;">Welcome, {{ user.full_name }}</h1>
+      <p style="color: var(--text-muted);">Manage your active parking reservations and vehicles</p>
+    </div>
+    
+    <a href="{{ url_for('user.find_parking') }}" class="btn btn-primary">
+      <i class="fa-solid fa-plus-circle"></i> Find Parking
+    </a>
+  </div>
+
+  <!-- Quick Action Buttons -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px;">
+    <a href="{{ url_for('user.find_parking') }}" class="glass-card" style="padding: 16px; text-align: center; color: #fff;">
+      <i class="fa-solid fa-magnifying-glass-location" style="font-size: 1.8rem; color: var(--primary); margin-bottom: 8px;"></i>
+      <div style="font-weight: 700; font-size: 0.95rem;">Find Parking</div>
+    </a>
+
+    <a href="{{ url_for('user.user_camera') }}" class="glass-card" style="padding: 16px; text-align: center; color: #fff;">
+      <i class="fa-solid fa-camera" style="font-size: 1.8rem; color: var(--success); margin-bottom: 8px;"></i>
+      <div style="font-weight: 700; font-size: 0.95rem;">Scan Vehicle</div>
+    </a>
+
+    <a href="{{ url_for('user.my_vehicles') }}" class="glass-card" style="padding: 16px; text-align: center; color: #fff;">
+      <i class="fa-solid fa-car" style="font-size: 1.8rem; color: var(--accent-cyan); margin-bottom: 8px;"></i>
+      <div style="font-weight: 700; font-size: 0.95rem;">My Vehicles</div>
+    </a>
+
+    <a href="{{ url_for('user.profile') }}" class="glass-card" style="padding: 16px; text-align: center; color: #fff;">
+      <i class="fa-solid fa-user-gear" style="font-size: 1.8rem; color: var(--warning); margin-bottom: 8px;"></i>
+      <div style="font-weight: 700; font-size: 0.95rem;">My Profile</div>
+    </a>
+  </div>
+
+  <!-- Active Booking Section -->
+  <div class="glass-card" style="padding: 24px; margin-bottom: 32px; border-left: 4px solid var(--primary); background: radial-gradient(circle at top right, rgba(59, 130, 246, 0.1) 0%, rgba(15, 23, 42, 0.9) 100%);">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+      <h2 style="font-size: 1.25rem; display: flex; align-items: center; gap: 8px;">
+        <i class="fa-solid fa-circle-dot" style="color: var(--success); font-size: 0.9rem;"></i> ACTIVE BOOKING
+      </h2>
+      {% if active_booking %}
+        <span class="badge badge-success">{{ active_booking.status }}</span>
+      {% else %}
+        <span class="badge badge-info">NO ACTIVE BOOKING</span>
+      {% endif %}
+    </div>
+
+    {% if active_booking %}
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 20px;">
+        <div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">PARKING LOCATION</div>
+          <div style="font-size: 1.1rem; font-weight: 700;">{{ active_booking.location.name }}</div>
+        </div>
+
+        <div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">SLOT ASSIGNED</div>
+          <div style="font-size: 1.3rem; font-weight: 800; color: var(--primary);">{{ active_booking.slot.slot_number }}</div>
+        </div>
+
+        <div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">VEHICLE NUMBER</div>
+          <div style="font-size: 1.1rem; font-weight: 700;">{{ active_booking.vehicle.vehicle_number }}</div>
+        </div>
+
+        <div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">BOOKING TIME</div>
+          <div style="font-size: 0.95rem; font-weight: 600;">{{ active_booking.start_time.strftime('%I:%M %p | %b %d') }}</div>
+        </div>
+
+        <div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">VALID UNTIL</div>
+          <div style="font-size: 0.95rem; font-weight: 600; color: var(--warning);">{{ active_booking.end_time.strftime('%I:%M %p | %b %d') }}</div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px;">
+        <a href="{{ url_for('user.view_booking', booking_id=active_booking.id) }}" class="btn btn-primary">
+          <i class="fa-solid fa-file-invoice"></i> View Booking & Invoice
+        </a>
+        <form method="POST" action="{{ url_for('user.cancel_user_booking', booking_id=active_booking.id) }}" onsubmit="return confirm('Are you sure you want to cancel this booking?');">
+          <button type="submit" class="btn btn-danger">
+            <i class="fa-solid fa-ban"></i> Cancel Booking
+          </button>
+        </form>
+      </div>
+    {% else %}
+      <p style="color: var(--text-muted);">You currently have no active or reserved parking slots.</p>
+      <a href="{{ url_for('user.find_parking') }}" class="btn btn-secondary" style="margin-top: 12px;">
+        <i class="fa-solid fa-magnifying-glass"></i> Search Nearby Parking
+      </a>
+    {% endif %}
+  </div>
+
+  <!-- Recent Bookings Table -->
+  <div class="glass-card" style="padding: 24px;">
+    <h3 style="font-size: 1.2rem; margin-bottom: 16px;"><i class="fa-solid fa-clock-rotate-left"></i> Recent Bookings History</h3>
+
+    <div style="overflow-x: auto;">
+      <table class="custom-table">
+        <thead>
+          <tr>
+            <th>Booking Ref</th>
+            <th>Date</th>
+            <th>Location</th>
+            <th>Slot</th>
+            <th>Duration</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in recent_bookings %}
+            <tr>
+              <td><strong>#{{ b.booking_reference }}</strong></td>
+              <td>{{ b.created_at.strftime('%b %d, %Y') }}</td>
+              <td>{{ b.location.name }}</td>
+              <td><span class="badge badge-info">{{ b.slot.slot_number }}</span></td>
+              <td>{{ b.duration_hours }} hrs</td>
+              <td>₹{{ b.total_amount }}</td>
+              <td>
+                <span class="badge {% if b.status == 'CONFIRMED' or b.status == 'ACTIVE' %}badge-success{% elif b.status == 'CANCELLED' %}badge-danger{% else %}badge-info{% endif %}">
+                  {{ b.status }}
+                </span>
+              </td>
+              <td>
+                <a href="{{ url_for('user.view_booking', booking_id=b.id) }}" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">View</a>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 20px;">No previous booking records found.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

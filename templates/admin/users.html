@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}User Directory - SmartPark Admin{% endblock %}
+
+{% block content %}
+<div class="dashboard-layout">
+  
+  <div class="sidebar">
+    <div class="sidebar-heading">ADMINISTRATION</div>
+    <ul class="sidebar-menu">
+      <li><a href="{{ url_for('admin.dashboard') }}" class="sidebar-link"><i class="fa-solid fa-gauge"></i> Dashboard Overview</a></li>
+      <li><a href="{{ url_for('admin.locations') }}" class="sidebar-link"><i class="fa-solid fa-location-dot"></i> Parking Locations</a></li>
+      <li><a href="{{ url_for('admin.bookings') }}" class="sidebar-link"><i class="fa-solid fa-calendar-days"></i> All Bookings</a></li>
+      <li><a href="{{ url_for('admin.computer_vision') }}" class="sidebar-link"><i class="fa-solid fa-camera"></i> Computer Vision AI</a></li>
+      <li><a href="{{ url_for('admin.users') }}" class="sidebar-link active"><i class="fa-solid fa-users"></i> User Directory</a></li>
+      <li><a href="{{ url_for('admin.activity') }}" class="sidebar-link"><i class="fa-solid fa-list-check"></i> Activity Audit Logs</a></li>
+      <li><a href="{{ url_for('admin.reports') }}" class="sidebar-link"><i class="fa-solid fa-chart-line"></i> Revenue & Reports</a></li>
+      <li><a href="{{ url_for('admin.settings') }}" class="sidebar-link"><i class="fa-solid fa-gears"></i> System & Blacklist</a></li>
+    </ul>
+  </div>
+
+  <div class="main-content">
+    
+    <div style="margin-bottom: 28px;">
+      <h1>Registered Users & Accounts</h1>
+      <p style="color: var(--text-muted);">Manage platform users, roles, and access suspensions</p>
+    </div>
+
+    <div class="glass-card" style="padding: 24px;">
+      <div style="overflow-x: auto;">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Full Name</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Joined Date</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+              <tr>
+                <td>#{{ u.id }}</td>
+                <td><strong>{{ u.full_name }}</strong></td>
+                <td>{{ u.email }}</td>
+                <td>{{ u.phone or 'N/A' }}</td>
+                <td><span class="badge {% if u.role == 'admin' %}badge-danger{% else %}badge-info{% endif %}">{{ u.role }}</span></td>
+                <td>
+                  <span class="badge {% if u.is_active %}badge-success{% else %}badge-warning{% endif %}">
+                    {{ 'ACTIVE' if u.is_active else 'SUSPENDED' }}
+                  </span>
+                </td>
+                <td>{{ u.created_at.strftime('%b %d, %Y') }}</td>
+                <td>
+                  {% if u.role != 'admin' %}
+                    <form method="POST" action="{{ url_for('admin.toggle_user_status', user_id=u.id) }}">
+                      <button type="submit" class="btn {% if u.is_active %}btn-danger{% else %}btn-success{% endif %}" style="padding: 4px 10px; font-size: 0.75rem;">
+                        {{ 'Suspend' if u.is_active else 'Activate' }}
+                      </button>
+                    </form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Administrator Login - SmartPark Admin{% endblock %}
+
+{% block content %}
+<div class="container" style="display: flex; align-items: center; justify-content: center; min-height: 75vh; padding-top: 30px;">
+  
+  <div class="glass-card" style="width: 100%; max-width: 440px; padding: 40px; border-top: 4px solid var(--danger); background: rgba(15, 23, 42, 0.9);">
+    
+    <div style="text-align: center; margin-bottom: 32px;">
+      <i class="fa-solid fa-user-shield" style="font-size: 3rem; color: var(--danger); margin-bottom: 12px;"></i>
+      <h2 style="font-size: 1.8rem; font-weight: 800; color: #fff; letter-spacing: 0.05em;">SMARTPARK ADMIN</h2>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 4px;">Administrator Login</p>
+    </div>
+
+    <form method="POST" action="{{ url_for('auth.admin_login') }}">
+      
+      <div class="form-group">
+        <label for="email"><i class="fa-solid fa-user-tie"></i> Admin Email</label>
+        <input type="email" id="email" name="email" class="form-control" placeholder="admin@smartpark.com" value="{{ email or '' }}" required autofocus>
+      </div>
+
+      <div class="form-group">
+        <label for="password"><i class="fa-solid fa-key"></i> Admin Password</label>
+        <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required>
+      </div>
+
+      <button type="submit" class="btn btn-danger" style="width: 100%; padding: 12px; margin-top: 8px; font-size: 1rem; font-weight: 700;">
+        <i class="fa-solid fa-shield-halved"></i> Admin Login
+      </button>
+
+    </form>
+
+    <div style="margin-top: 28px; padding: 12px; border-radius: var(--radius-sm); background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); text-align: center; font-size: 0.82rem; color: var(--danger);">
+      <i class="fa-solid fa-triangle-exclamation"></i> <strong>Security Notice:</strong><br/>
+      "Authorized personnel only. All access attempts are audited and logged."
+    </div>
+
+    <div style="text-align: center; margin-top: 20px; font-size: 0.85rem;">
+      <a href="{{ url_for('auth.user_login') }}" style="color: var(--text-muted);"><i class="fa-solid fa-arrow-left"></i> Return to Regular User Login</a>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

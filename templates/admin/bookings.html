@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}All Bookings - SmartPark Admin{% endblock %}
+
+{% block content %}
+<div class="dashboard-layout">
+  
+  <div class="sidebar">
+    <div class="sidebar-heading">ADMINISTRATION</div>
+    <ul class="sidebar-menu">
+      <li><a href="{{ url_for('admin.dashboard') }}" class="sidebar-link"><i class="fa-solid fa-gauge"></i> Dashboard Overview</a></li>
+      <li><a href="{{ url_for('admin.locations') }}" class="sidebar-link"><i class="fa-solid fa-location-dot"></i> Parking Locations</a></li>
+      <li><a href="{{ url_for('admin.bookings') }}" class="sidebar-link active"><i class="fa-solid fa-calendar-days"></i> All Bookings</a></li>
+      <li><a href="{{ url_for('admin.computer_vision') }}" class="sidebar-link"><i class="fa-solid fa-camera"></i> Computer Vision AI</a></li>
+      <li><a href="{{ url_for('admin.users') }}" class="sidebar-link"><i class="fa-solid fa-users"></i> User Directory</a></li>
+      <li><a href="{{ url_for('admin.activity') }}" class="sidebar-link"><i class="fa-solid fa-list-check"></i> Activity Audit Logs</a></li>
+      <li><a href="{{ url_for('admin.reports') }}" class="sidebar-link"><i class="fa-solid fa-chart-line"></i> Revenue & Reports</a></li>
+      <li><a href="{{ url_for('admin.settings') }}" class="sidebar-link"><i class="fa-solid fa-gears"></i> System & Blacklist</a></li>
+    </ul>
+  </div>
+
+  <div class="main-content">
+    
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px;">
+      <div>
+        <h1>All Customer Bookings</h1>
+        <p style="color: var(--text-muted);">Monitor, search and manage parking reservations across all hubs</p>
+      </div>
+
+      <!-- Filters -->
+      <div style="display: flex; gap: 8px;">
+        <a href="{{ url_for('admin.bookings', status='ALL') }}" class="btn btn-secondary {% if current_filter == 'ALL' %}btn-primary{% endif %}" style="padding:6px 12px; font-size:0.8rem;">ALL</a>
+        <a href="{{ url_for('admin.bookings', status='CONFIRMED') }}" class="btn btn-secondary {% if current_filter == 'CONFIRMED' %}btn-primary{% endif %}" style="padding:6px 12px; font-size:0.8rem;">CONFIRMED</a>
+        <a href="{{ url_for('admin.bookings', status='ACTIVE') }}" class="btn btn-secondary {% if current_filter == 'ACTIVE' %}btn-primary{% endif %}" style="padding:6px 12px; font-size:0.8rem;">ACTIVE</a>
+        <a href="{{ url_for('admin.bookings', status='CANCELLED') }}" class="btn btn-secondary {% if current_filter == 'CANCELLED' %}btn-primary{% endif %}" style="padding:6px 12px; font-size:0.8rem;">CANCELLED</a>
+      </div>
+    </div>
+
+    <!-- Bookings Table -->
+    <div class="glass-card" style="padding: 24px;">
+      <div style="overflow-x: auto;">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Ref ID</th>
+              <th>Customer</th>
+              <th>Vehicle No</th>
+              <th>Location</th>
+              <th>Slot</th>
+              <th>Start Time</th>
+              <th>End Time</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in bookings %}
+              <tr>
+                <td><strong>#{{ b.booking_reference }}</strong></td>
+                <td>
+                  {{ b.user.full_name }}<br/>
+                  <span style="font-size:0.75rem; color:var(--text-muted);">{{ b.user.email }}</span>
+                </td>
+                <td><span style="font-weight:700; color:var(--accent-cyan);">{{ b.vehicle.vehicle_number }}</span></td>
+                <td>{{ b.location.name }}</td>
+                <td><span class="badge badge-info">{{ b.slot.slot_number }}</span></td>
+                <td>{{ b.start_time.strftime('%I:%M %p | %b %d') }}</td>
+                <td>{{ b.end_time.strftime('%I:%M %p | %b %d') }}</td>
+                <td>₹{{ b.total_amount }}</td>
+                <td>
+                  <span class="badge {% if b.status == 'CONFIRMED' or b.status == 'ACTIVE' %}badge-success{% elif b.status == 'CANCELLED' %}badge-danger{% else %}badge-info{% endif %}">
+                    {{ b.status }}
+                  </span>
+                </td>
+                <td>
+                  {% if b.status in ['CONFIRMED', 'ACTIVE', 'RESERVED'] %}
+                    <button onclick="openCancelModal({{ b.id }}, '{{ b.booking_reference }}')" class="btn btn-danger" style="padding: 4px 10px; font-size: 0.75rem;">
+                      <i class="fa-solid fa-ban"></i> Cancel
+                    </button>
+                  {% else %}
+                    <span style="font-size:0.75rem; color:var(--text-dark);">N/A</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 20px;">No bookings match current filter.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Admin Cancellation Modal -->
+    <div id="admin-cancel-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 9999; align-items: center; justify-content: center;">
+      <div class="glass-card" style="width: 100%; max-width: 460px; padding: 32px; margin: 100px auto; background: rgba(15, 23, 42, 0.95); border-left: 4px solid var(--danger);">
+        <h3 style="font-size: 1.25rem; margin-bottom: 12px; color: var(--danger);">Cancel Customer Booking</h3>
+        <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 20px;">
+          You are about to cancel booking <strong id="cancel-booking-ref" style="color:#fff;"></strong>. The slot will be freed immediately and the user will receive a WebSocket alert.
+        </p>
+
+        <form id="admin-cancel-form" method="POST">
+          <div class="form-group">
+            <label for="cancellation_reason">Mandatory Cancellation Reason</label>
+            <textarea id="cancellation_reason" name="cancellation_reason" class="form-control" rows="3" placeholder="Slot maintenance / Admin override..." required></textarea>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
+            <button type="button" onclick="document.getElementById('admin-cancel-modal').style.display='none'" class="btn btn-secondary">Keep Booking</button>
+            <button type="submit" class="btn btn-danger">Confirm Cancellation</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function openCancelModal(bookingId, bookingRef) {
+    document.getElementById('cancel-booking-ref').innerText = '#' + bookingRef;
+    document.getElementById('admin-cancel-form').action = '/admin/bookings/' + bookingId + '/cancel';
+    document.getElementById('admin-cancel-modal').style.display = 'flex';
+  }
+</script>
+{% endblock %}

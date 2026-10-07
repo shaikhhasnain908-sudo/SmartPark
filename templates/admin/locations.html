@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Locations - SmartPark Admin{% endblock %}
+
+{% block content %}
+<div class="dashboard-layout">
+  
+  <div class="sidebar">
+    <div class="sidebar-heading">ADMINISTRATION</div>
+    <ul class="sidebar-menu">
+      <li><a href="{{ url_for('admin.dashboard') }}" class="sidebar-link"><i class="fa-solid fa-gauge"></i> Dashboard Overview</a></li>
+      <li><a href="{{ url_for('admin.locations') }}" class="sidebar-link active"><i class="fa-solid fa-location-dot"></i> Parking Locations</a></li>
+      <li><a href="{{ url_for('admin.bookings') }}" class="sidebar-link"><i class="fa-solid fa-calendar-days"></i> All Bookings</a></li>
+      <li><a href="{{ url_for('admin.computer_vision') }}" class="sidebar-link"><i class="fa-solid fa-camera"></i> Computer Vision AI</a></li>
+      <li><a href="{{ url_for('admin.users') }}" class="sidebar-link"><i class="fa-solid fa-users"></i> User Directory</a></li>
+      <li><a href="{{ url_for('admin.activity') }}" class="sidebar-link"><i class="fa-solid fa-list-check"></i> Activity Audit Logs</a></li>
+      <li><a href="{{ url_for('admin.reports') }}" class="sidebar-link"><i class="fa-solid fa-chart-line"></i> Revenue & Reports</a></li>
+      <li><a href="{{ url_for('admin.settings') }}" class="sidebar-link"><i class="fa-solid fa-gears"></i> System & Blacklist</a></li>
+    </ul>
+  </div>
+
+  <div class="main-content">
+    
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px;">
+      <div>
+        <h1>Parking Location Management</h1>
+        <p style="color: var(--text-muted);">Configure parking hubs, slot capacities, coordinates, and rates</p>
+      </div>
+
+      <button onclick="document.getElementById('add-location-modal').style.display='block'" class="btn btn-primary">
+        <i class="fa-solid fa-plus-circle"></i> Add Parking Location
+      </button>
+    </div>
+
+    <!-- Locations Grid -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 24px;">
+      {% for loc in locations %}
+        <div class="glass-card" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+              <h3 style="font-size: 1.2rem; color: #fff;">{{ loc.name }}</h3>
+              <span class="badge {% if loc.status == 'OPEN' %}badge-success{% else %}badge-danger{% endif %}">{{ loc.status }}</span>
+            </div>
+
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 16px;"><i class="fa-solid fa-location-dot" style="color: var(--primary);"></i> {{ loc.address }}</p>
+
+            <div style="background: rgba(30, 41, 59, 0.5); padding: 14px; border-radius: var(--radius-sm); margin-bottom: 18px; font-size: 0.88rem;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--text-muted);">Total Slots:</span>
+                <strong>{{ loc.total_slots }} Slots</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--text-muted);">Available:</span>
+                <strong style="color: var(--success);">{{ loc.available_slots }} Free</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--text-muted);">Hourly Rate:</span>
+                <strong style="color: #fff;">₹{{ loc.hourly_rate }}/hr</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span style="color: var(--text-muted);">GPS Coordinates:</span>
+                <span style="font-family: monospace; font-size: 0.8rem;">{{ loc.latitude }}, {{ loc.longitude }}</span>
+              </div>
+            </div>
+          </div>
+
+          <form method="POST" action="{{ url_for('admin.locations') }}">
+            <input type="hidden" name="action" value="toggle_status">
+            <input type="hidden" name="location_id" value="{{ loc.id }}">
+            <button type="submit" class="btn btn-secondary" style="width: 100%; padding: 8px;">
+              Toggle {{ 'Close' if loc.status == 'OPEN' else 'Open' }} Status
+            </button>
+          </form>
+        </div>
+      {% endfor %}
+    </div>
+
+    <!-- Add Location Modal -->
+    <div id="add-location-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 9999; align-items: center; justify-content: center; padding: 24px;">
+      <div class="glass-card" style="width: 100%; max-width: 500px; padding: 32px; margin: 50px auto; background: rgba(15, 23, 42, 0.95);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <h3>Add Parking Location</h3>
+          <button onclick="document.getElementById('add-location-modal').style.display='none'" style="background:none; border:none; color:#fff; font-size:1.4rem; cursor:pointer;">&times;</button>
+        </div>
+
+        <form method="POST" action="{{ url_for('admin.locations') }}">
+          <input type="hidden" name="action" value="add">
+          
+          <div class="form-group">
+            <label>Location Name</label>
+            <input type="text" name="name" class="form-control" placeholder="SmartPark Plaza Hub" required>
+          </div>
+
+          <div class="form-group">
+            <label>Address</label>
+            <input type="text" name="address" class="form-control" placeholder="123 Commercial St, Surat" required>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label>Latitude</label>
+              <input type="number" step="any" name="latitude" class="form-control" value="21.1702" required>
+            </div>
+            <div class="form-group">
+              <label>Longitude</label>
+              <input type="number" step="any" name="longitude" class="form-control" value="72.8311" required>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label>Total Capacity (Slots)</label>
+              <input type="number" name="total_slots" class="form-control" value="20" required>
+            </div>
+            <div class="form-group">
+              <label>Hourly Rate (₹)</label>
+              <input type="number" step="any" name="hourly_rate" class="form-control" value="20.0" required>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px; margin-top: 10px;">
+            Save & Create Location
+          </button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Find Parking - SmartPark Live Google Maps & GPS{% endblock %}
+
+{% block extra_head %}
+{% if google_maps_key %}
+  <script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_key }}&libraries=places"></script>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top: 30px;">
+  
+  <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 24px;">
+    <div>
+      <h1>Live Google Maps & GPS Parking Hubs</h1>
+      <p style="color: var(--text-muted);">Real-time GPS distance tracking, availability & route navigation</p>
+    </div>
+    
+    <div style="display: flex; gap: 12px;">
+      <button onclick="getUserLocation()" class="btn btn-primary">
+        <i class="fa-solid fa-location-crosshairs"></i> Refresh Live Location
+      </button>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+    
+    <!-- Map Container -->
+    <div class="glass-card" style="padding: 16px;">
+      <div id="map" style="width: 100%; height: 530px; border-radius: var(--radius-sm);"></div>
+    </div>
+
+    <!-- Parking Locations List with Distance Badges -->
+    <div style="display: flex; flex-direction: column; gap: 16px; max-height: 560px; overflow-y: auto;">
+      {% for loc in locations %}
+        <div class="glass-card" style="padding: 18px;">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px;">
+            <div>
+              <h3 style="font-size: 1.1rem; color: #fff;">{{ loc.name }}</h3>
+              <span id="dist-badge-{{ loc.id }}" class="badge badge-info" style="display:none; margin-top:4px; font-size:0.75rem;"></span>
+            </div>
+            <span class="badge {% if loc.available_slots > 5 %}badge-success{% elif loc.available_slots > 0 %}badge-warning{% else %}badge-danger{% endif %}">
+              {% if loc.available_slots > 0 %}{{ loc.available_slots }} Free{% else %}FULL{% endif %}
+            </span>
+          </div>
+          
+          <p style="color: var(--text-muted); font-size: 0.82rem; margin-bottom: 12px;">{{ loc.address }}</p>
+          
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.88rem; margin-bottom: 14px;">
+            <div>Rate: <strong>₹{{ loc.hourly_rate }}/hr</strong></div>
+            <div>Slots: <strong>{{ loc.available_slots }}/{{ loc.total_slots }}</strong></div>
+          </div>
+
+          <a href="{{ url_for('user.book_slot', location_id=loc.id) }}" class="btn btn-primary" style="width: 100%; padding: 8px 14px; font-size: 0.85rem;">
+            <i class="fa-solid fa-calendar-check"></i> Book Parking
+          </a>
+        </div>
+      {% endfor %}
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  let locationsData = [];
+
+  document.addEventListener('DOMContentLoaded', () => {
+    locationsData = {{ locations_json | tojson }};
+    initSmartParkMap('map', locationsData, "{{ google_maps_key or '' }}");
+
+    // Auto-locate GPS position on load
+    getUserLocation();
+  });
+
+  function getUserLocation() {
+    requestUserLocation(
+      (lat, lng) => {
+        showToast("GPS Active", `Location acquired (${lat.toFixed(4)}, ${lng.toFixed(4)}). Distances updated.`, "success");
+      },
+      (err) => {
+        showToast("Location Access", err || "Click 'Refresh Live Location' to enable GPS.", "info");
+      },
+      locationsData
+    );
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,102 @@
+/* Parking Slot Interactive Grid */
+
+.slot-zone {
+  margin-bottom: 24px;
+}
+
+.slot-zone-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--accent-cyan);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 14px;
+}
+
+.slot-box {
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  user-select: none;
+}
+
+.slot-number {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.slot-status-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-top: 4px;
+  text-transform: uppercase;
+}
+
+/* Slot Status States */
+.slot-box.free {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.slot-box.free:hover {
+  border-color: var(--success);
+  background: rgba(16, 185, 129, 0.2);
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.25);
+}
+
+.slot-box.free .slot-status-label {
+  color: var(--success);
+}
+
+.slot-box.reserved {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.08);
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.slot-box.reserved .slot-status-label {
+  color: var(--warning);
+}
+
+.slot-box.occupied {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.08);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.slot-box.occupied .slot-status-label {
+  color: var(--danger);
+}
+
+.slot-box.selected {
+  border-color: var(--primary) !important;
+  background: rgba(59, 130, 246, 0.3) !important;
+  box-shadow: 0 0 0 4px var(--primary-glow), 0 8px 20px rgba(59, 130, 246, 0.3);
+  transform: scale(1.05);
+}
+
+.slot-box.selected::after {
+  content: '✓';
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-weight: bold;
+  color: #ffffff;
+  font-size: 0.8rem;
+}

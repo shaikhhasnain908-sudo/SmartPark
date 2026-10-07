@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}Book Parking Slot - {{ location.name }}{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top: 30px; padding-bottom: 60px;">
+  
+  <div style="margin-bottom: 24px;">
+    <a href="{{ url_for('user.find_parking') }}" style="color: var(--text-muted); font-weight: 500; font-size: 0.9rem;">
+      <i class="fa-solid fa-arrow-left"></i> Back to Find Parking
+    </a>
+    <h1 style="font-size: 2rem; margin-top: 8px;">Book Parking Slot</h1>
+    <p style="color: var(--text-muted);">{{ location.name }} — {{ location.address }}</p>
+  </div>
+
+  <form method="POST" action="{{ url_for('user.book_slot', location_id=location.id) }}">
+    <input type="hidden" id="selected_slot_id" name="slot_id" required>
+    <input type="hidden" id="hourly_rate" value="{{ location.hourly_rate }}">
+
+    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 32px;">
+      
+      <!-- Slot Selection Grid -->
+      <div class="glass-card" style="padding: 28px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+          <h2>Select a Parking Slot</h2>
+          
+          <div style="display: flex; gap: 16px; font-size: 0.8rem;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <div style="width: 12px; height: 12px; border-radius: 3px; background: rgba(16,185,129,0.3); border:1px solid var(--success);"></div> Available
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <div style="width: 12px; height: 12px; border-radius: 3px; background: rgba(245,158,11,0.3); border:1px solid var(--warning);"></div> Reserved
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <div style="width: 12px; height: 12px; border-radius: 3px; background: rgba(239,68,68,0.3); border:1px solid var(--danger);"></div> Occupied
+            </div>
+          </div>
+        </div>
+
+        {% set zones = slots | groupby('zone') %}
+        {% for zone_name, zone_slots in zones %}
+          <div class="slot-zone">
+            <div class="slot-zone-title"><i class="fa-solid fa-layer-group"></i> {{ zone_name }}</div>
+            <div class="slots-grid">
+              {% for slot in zone_slots %}
+                <div class="slot-box {{ slot.status.lower() }}" data-slot-id="{{ slot.id }}" data-slot-number="{{ slot.slot_number }}">
+                  <div class="slot-number">{{ slot.slot_number }}</div>
+                  <div class="slot-status-label">{{ slot.status }}</div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <!-- Booking Configuration Side Panel -->
+      <div class="glass-card" style="padding: 28px; height: fit-content; background: rgba(15, 23, 42, 0.85);">
+        <h3 style="font-size: 1.25rem; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+          Booking Details
+        </h3>
+
+        <div style="margin-bottom: 20px; background: rgba(30, 41, 59, 0.5); padding: 14px; border-radius: var(--radius-sm);">
+          <div style="font-size: 0.8rem; color: var(--text-muted);">SELECTED SLOT</div>
+          <div id="selected_slot_number" style="font-size: 1.5rem; font-weight: 800; color: var(--primary);">None Selected</div>
+        </div>
+
+        <div class="form-group">
+          <label for="vehicle_id"><i class="fa-solid fa-car"></i> Select Vehicle</label>
+          <select id="vehicle_id" name="vehicle_id" class="form-control" required>
+            {% for v in vehicles %}
+              <option value="{{ v.id }}">{{ v.vehicle_number }} ({{ v.vehicle_type }} - {{ v.model }})</option>
+            {% else %}
+              <option value="">No vehicles found! Add one below.</option>
+            {% endfor %}
+          </select>
+          {% if not vehicles %}
+            <div style="margin-top: 6px; font-size: 0.8rem;">
+              <a href="{{ url_for('user.my_vehicles') }}" style="color: var(--warning);"><i class="fa-solid fa-plus"></i> Click here to add a vehicle first</a>
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="start_time"><i class="fa-solid fa-clock"></i> Start Date & Time</label>
+          <input type="datetime-local" id="start_time" name="start_time" class="form-control" value="{{ now_str }}" required>
+        </div>
+
+        <div class="form-group">
+          <label for="duration"><i class="fa-solid fa-hourglass-half"></i> Duration (Hours)</label>
+          <input type="number" id="duration" name="duration" class="form-control" min="0.5" max="24" step="0.5" value="1.0" required>
+        </div>
+
+        <div style="border-top: 1px solid var(--border); padding-top: 16px; margin-top: 24px; margin-bottom: 24px;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.9rem; color: var(--text-muted); margin-bottom: 6px;">
+            <span>Rate per hour:</span>
+            <span>₹{{ location.hourly_rate }}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 1.25rem; font-weight: 800; color: #fff;">
+            <span>Total Estimated Fee:</span>
+            <span id="estimated_fee" style="color: var(--success);">₹{{ location.hourly_rate }}</span>
+          </div>
+        </div>
+
+        <button type="submit" id="confirm_booking_btn" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 1.05rem;" disabled>
+          <i class="fa-solid fa-check-circle"></i> Confirm Booking
+        </button>
+
+      </div>
+
+    </div>
+
+  </form>
+
+</div>
+{% endblock %}

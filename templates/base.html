@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}SmartPark - AI-Powered Smart Parking Management System{% endblock %}</title>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Leaflet Map CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <!-- Core CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/slot_grid.css') }}">
+  
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <a href="{{ url_for('user.home') }}" class="navbar-brand">
+      <i class="fa-solid fa-square-parking" style="color:var(--primary); font-size:1.6rem;"></i>
+      SMART<span>PARK</span>
+    </a>
+
+    <ul class="navbar-nav">
+      <li><a href="{{ url_for('user.home') }}" class="nav-link"><i class="fa-solid fa-house"></i> Home</a></li>
+      <li><a href="{{ url_for('user.find_parking') }}" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> Find Parking</a></li>
+      
+      {% if session.get('user_id') %}
+        {% if session.get('role') == 'admin' %}
+          <li><a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary" style="padding:6px 14px; font-size:0.85rem;"><i class="fa-solid fa-user-shield"></i> Admin Panel</a></li>
+        {% else %}
+          <li><a href="{{ url_for('user.user_camera') }}" class="nav-link"><i class="fa-solid fa-camera"></i> ANPR Camera</a></li>
+          <li><a href="{{ url_for('user.dashboard') }}" class="nav-link"><i class="fa-solid fa-gauge-high"></i> Dashboard</a></li>
+        {% endif %}
+        <li><a href="{{ url_for('auth.logout') }}" class="btn btn-secondary" style="padding:6px 14px; font-size:0.85rem;"><i class="fa-solid fa-right-from-bracket"></i> Logout</a></li>
+      {% else %}
+        <li><a href="{{ url_for('auth.user_login') }}" class="nav-link">Login</a></li>
+        <li><a href="{{ url_for('auth.register') }}" class="btn btn-primary" style="padding:6px 14px; font-size:0.85rem;">Register</a></li>
+        <li><a href="{{ url_for('auth.admin_login') }}" class="nav-link" style="font-size:0.85rem; color:var(--text-dark);"><i class="fa-solid fa-lock"></i> Admin Portal</a></li>
+      {% endif %}
+    </ul>
+  </nav>
+
+  <!-- Flash Messages -->
+  <div class="container" style="padding-top: 16px; padding-bottom: 0;">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="glass-card" style="padding: 12px 18px; margin-bottom: 16px; border-left: 4px solid var(--{{ category if category != 'danger' else 'danger' }}); background: rgba(15, 23, 42, 0.85);">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span>{{ message }}</span>
+              <button onclick="this.parentElement.parentElement.remove()" style="background:none; border:none; color:var(--text-muted); cursor:pointer;">&times;</button>
+            </div>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+  </div>
+
+  <!-- Main Content Body -->
+  {% block content %}{% endblock %}
+
+  <!-- Footer -->
+  <footer style="margin-top: 60px; border-top: 1px solid var(--glass-border); padding: 30px 0; background: rgba(9, 13, 22, 0.9);">
+    <div class="container" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+      <div>
+        <div style="font-weight:800; font-size:1.1rem; color:#fff;">SMARTPARK</div>
+        <div style="font-size:0.85rem; color:var(--text-muted);">AI-Powered Smart Parking Management System — "Find. Book. Park. Smart."</div>
+      </div>
+      <div style="font-size:0.85rem; color:var(--text-dark);">
+        &copy; 2026 SmartPark Platform. All rights reserved. | <a href="{{ url_for('auth.admin_login') }}" style="color:var(--text-dark);">Admin Login</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Socket.IO & Leaflet JS -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <!-- Global Scripts -->
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/map.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/camera.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/slot_picker.js') }}"></script>
+  
+  {% block extra_js %}{% endblock %}
+</body>
+</html>
