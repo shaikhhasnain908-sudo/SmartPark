@@ -219,6 +219,25 @@
     badgeEl.innerText = success ? 'SUCCESS' : 'WARNING';
     badgeEl.className = `badge ${success ? 'badge-success' : 'badge-warning'}`;
 
+    if (!success || (data && data.requires_manual_entry)) {
+      const cameraType = (data && data.camera_type) ? data.camera_type : 'ENTRY';
+      gridEl.innerHTML = `
+        <div style="grid-column: span 2; background: rgba(30, 41, 59, 0.9); padding: 18px; border-radius: 8px; border: 1px dashed var(--warning);">
+          <label style="color: var(--accent-cyan); font-weight: 700; font-size: 0.95rem; display: block; margin-bottom: 8px;">
+            <i class="fa-solid fa-pen-to-square"></i> Enter / Confirm License Plate Number to Register & Grant Entry:
+          </label>
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <input type="text" id="prompt_manual_plate" class="form-control" placeholder="e.g. GJ09AB1234 or MH12DE5678" style="text-transform: uppercase; font-size: 1.1rem; font-weight: 700; flex: 1;" value="GJ09AB1234">
+            <button onclick="submitPromptManualPlate('${cameraType}')" class="btn btn-success" style="white-space: nowrap; font-weight: 700; padding: 10px 18px;">
+              <i class="fa-solid fa-check-circle"></i> Register & Grant Entry
+            </button>
+          </div>
+        </div>
+      `;
+      actionsEl.innerHTML = '';
+      return;
+    }
+
     if (data) {
       gridEl.innerHTML = `
         <div>
@@ -232,7 +251,7 @@
         </div>
         <div style="grid-column: span 2; background: rgba(6, 186, 212, 0.12); padding: 12px; border-radius: 6px; border-left: 4px solid var(--accent-cyan);">
           <div style="font-size: 0.82rem; color: var(--accent-cyan); font-weight: 700;"><i class="fa-solid fa-clock"></i> LIVE ENTRY TIMESTAMP</div>
-          <div style="font-size: 1.15rem; font-weight: 800; color: #fff;">${data.entry_time || 'Just Now'}</div>
+          <div style="font-size: 1.15rem; font-weight: 800; color: #fff;">${data.entry_time || new Date().toLocaleString()}</div>
         </div>
         ${data.exit_time ? `
         <div style="grid-column: span 2; background: rgba(239, 68, 68, 0.12); padding: 10px; border-radius: 6px; border-left: 4px solid var(--danger);">
@@ -260,6 +279,20 @@
         actionsEl.innerHTML = '';
       }
     }
+  }
+
+  function submitPromptManualPlate(cameraType) {
+    const locId = document.getElementById('user_cam_location_id').value;
+    const plate = document.getElementById('prompt_manual_plate').value.trim();
+    if (!plate) {
+      showToast("Plate Required", "Please enter a valid license plate number.", "warning");
+      return;
+    }
+    showToast("Processing Gate Action", `Registering & processing ${cameraType} for ${plate}...`, "info");
+    scanManualPlateInput(plate, locId, cameraType, (success, msg, data) => {
+      renderResultReceipt(success, msg, data);
+      showToast("Gate Action Completed", msg, success ? "success" : "warning");
+    });
   }
 
   function triggerScan(cameraType = 'ENTRY') {

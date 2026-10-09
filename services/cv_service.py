@@ -174,7 +174,14 @@ def process_anpr_frame(location_id, base64_frame, camera_type='ENTRY', manual_pl
         confidence = 1.0
 
     if not plate_number or len(plate_number) < 4:
-        return False, "Unable to read license plate from image. Please enter vehicle number manually.", None
+        return False, "Unable to read license plate from image. Please enter vehicle number below to register & grant entry:", {
+            'requires_manual_entry': True,
+            'camera_type': camera_type,
+            'location_id': location_id,
+            'confidence': 0.0,
+            'plate': '',
+            'bbox': {'x': 0, 'y': 0, 'w': 0, 'h': 0}
+        }
 
     success, message, result = process_anpr_plate_logic(location_id, plate_number, confidence, camera_type)
     if result:
