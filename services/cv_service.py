@@ -46,7 +46,7 @@ def decode_base64_image(base64_str):
 
 def clean_plate_text(raw_text):
     """
-    Sanitize OCR text into clean uppercase license plate string (e.g. GJ09AB1234, MH12DE5678)
+    Sanitize OCR text into clean uppercase license plate string (e.g. MH12AB1234, GJ09AB1234, DL01CA1111)
     Removes spaces, symbols, hyphens, and extracts standard plate patterns.
     """
     if not raw_text:
@@ -56,13 +56,13 @@ def clean_plate_text(raw_text):
     if not cleaned:
         return ""
 
-    # Priority 1: Match standard Indian plate regex (e.g., GJ09AB1234, MH12C1234, DL01CA1111)
+    # Priority 1: Match standard Indian plate regex (e.g., GJ09AB1234, MH12DE5678, DL01CA1111, KA05XY9999)
     plate_match = re.search(r'([A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4})', cleaned)
     if plate_match:
         return plate_match.group(1)
 
     # Priority 2: Match state code + digits format (e.g. GJ091234, MH125678)
-    state_match = re.search(r'([A-Z]{2}[0-9]{6,8})', cleaned)
+    state_match = re.search(r'([A-Z]{2}[0-9]{5,8})', cleaned)
     if state_match:
         return state_match.group(1)
 
@@ -109,51 +109,81 @@ def preprocess_and_detect_plate_region(img):
 
 def perform_anpr_ocr(img):
     """
-    Runs ANPR OCR on frame image using EasyOCR with multi-stage fallback.
+    Runs ANPR OCR on frame image using EasyOCR with robust multi-pass detection.
+    Evaluates original image, 2x upscaled image, CLAHE enhanced image, and binarized threshold image.
+    Extracts the highest confidence real license plate text.
     """
     if img is None:
         return "", 0.0, (0, 0, 0, 0)
 
-    cropped_plate, bbox = preprocess_and_detect_plate_region(img)
     reader = get_ocr_reader()
-    
-    detected_text = ""
-    confidence = 0.0
+    if not reader:
+        return "", 0.0, (0, 0, img.shape[1], img.shape[0])
 
-    if reader:
-        # Stage 1: Try reading cropped candidate region
-        if cropped_plate is not None and cropped_plate.size > 0:
-            try:
-                results = reader.readtext(cropped_plate)
-                if results:
-                    best = max(results, key=lambda x: x[2])
-                    candidate = clean_plate_text(best[1])
-                    if len(candidate) >= 4:
-                        detected_text = candidate
-                        confidence = float(best[2])
-            except Exception as e:
-                print(f"[CV Service] EasyOCR cropped read error: {e}")
+    candidates = []
 
-        # Stage 2: Fallback to full frame OCR if cropped stage did not yield valid plate
-        if not detected_text or len(detected_text) < 4:
-            try:
-                results = reader.readtext(img)
-                if results:
-                    # Filter results by length and confidence
-                    valid_candidates = []
-                    for res in results:
-                        txt = clean_plate_text(res[1])
-                        conf = float(res[2])
-                        if len(txt) >= 4:
-                            valid_candidates.append((txt, conf, res[0]))
-                    if valid_candidates:
-                        best = max(valid_candidates, key=lambda x: x[1])
-                        detected_text = best[0]
-                        confidence = best[1]
-            except Exception as e:
-                print(f"[CV Service] EasyOCR full-frame read error: {e}")
+    # Prepare Image Passes
+    passes = [("original", img)]
 
-    return detected_text, confidence, bbox
+    # Pass 2: Upscaled Image (2x zoom for far away or small license plates)
+    try:
+        h, w = img.shape[:2]
+        if w < 1200:
+            upscaled = cv2.resize(img, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
+            passes.append(("upscaled", upscaled))
+    except Exception:
+        pass
+
+    # Pass 3: CLAHE Enhanced Grayscale Image
+    try:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+        passes.append(("enhanced", enhanced))
+    except Exception:
+        pass
+
+    # Pass 4: Cropped License Plate Contour Box (if detected)
+    cropped_plate, bbox = preprocess_and_detect_plate_region(img)
+    if cropped_plate is not None and cropped_plate.size > 0:
+        passes.insert(0, ("cropped", cropped_plate))
+    else:
+        bbox = (0, 0, img.shape[1], img.shape[0])
+
+    # Pass 5: Otsu Binarized Threshold Image
+    try:
+        if 'gray' in locals():
+            _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            passes.append(("thresh", thresh))
+    except Exception:
+        pass
+
+    # Execute OCR across passes
+    for pass_name, img_pass in passes:
+        try:
+            results = reader.readtext(img_pass)
+            if results:
+                for res in results:
+                    raw_txt = res[1]
+                    conf = float(res[2])
+                    cleaned = clean_plate_text(raw_txt)
+                    if len(cleaned) >= 4:
+                        # Give higher weight if matching standard plate pattern
+                        score = conf
+                        if re.search(r'[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}', cleaned):
+                            score += 0.3
+                        elif re.search(r'[A-Z]{2}[0-9]{5,8}', cleaned):
+                            score += 0.2
+                        candidates.append((cleaned, score, conf, bbox))
+        except Exception as e:
+            print(f"[CV Service] EasyOCR pass ({pass_name}) error: {e}")
+
+    if candidates:
+        # Sort by boosted confidence score
+        best = max(candidates, key=lambda x: x[1])
+        return best[0], best[2], best[3]
+
+    return "", 0.0, bbox
 
 def process_anpr_frame(location_id, base64_frame, camera_type='ENTRY', manual_plate=None):
     """
@@ -276,8 +306,9 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
         Booking.status.in_(['CONFIRMED', 'ACTIVE', 'RESERVED'])
     ).order_by(Booking.start_time.asc()).first()
 
-    now = datetime.utcnow()
-    live_entry_str = now.strftime('%b %d, %Y - %I:%M:%S %p')
+    now_utc = datetime.utcnow()
+    now_local = datetime.now()
+    live_entry_str = now_local.strftime('%b %d, %Y - %I:%M:%S %p')
     action_taken = "PROCESSED"
     message = ""
     status_code = "SUCCESS"
@@ -288,8 +319,8 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
         if matched_booking:
             # Active or pre-booked reservation
             matched_booking.status = 'ACTIVE'
-            matched_booking.start_time = now
-            matched_booking.entry_time = now
+            matched_booking.start_time = now_utc
+            matched_booking.entry_time = now_utc
             slot = ParkingSlot.query.get(matched_booking.slot_id)
             if slot:
                 slot.status = 'OCCUPIED'
@@ -311,9 +342,9 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
                 vehicle_id=vehicle.id,
                 location_id=location_id,
                 slot_id=slot.id,
-                start_time=now,
-                entry_time=now,
-                end_time=now, # updated on exit
+                start_time=now_utc,
+                entry_time=now_utc,
+                end_time=now_utc, # updated on exit
                 duration_hours=1.0,
                 hourly_rate=location.hourly_rate,
                 total_amount=location.hourly_rate,
@@ -348,15 +379,15 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
 
     else: # EXIT & FEE CALCULATION
         if matched_booking:
-            start_time = matched_booking.entry_time or matched_booking.start_time or now
-            matched_booking.exit_time = now
-            elapsed_seconds = (now - start_time).total_seconds()
+            start_time = matched_booking.entry_time or matched_booking.start_time or now_utc
+            matched_booking.exit_time = now_utc
+            elapsed_seconds = (now_utc - start_time).total_seconds()
             duration_hrs = max(0.5, round(elapsed_seconds / 3600.0, 2))
             billing_hours = max(1.0, math.ceil(duration_hrs))
             
             total_fee = round(billing_hours * location.hourly_rate, 2)
             
-            matched_booking.end_time = now
+            matched_booking.end_time = now_utc
             matched_booking.duration_hours = duration_hrs
             matched_booking.total_amount = total_fee
             matched_booking.status = 'COMPLETED'
@@ -437,11 +468,11 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
         'total_fee': total_fee,
         'booking_ref': matched_booking.booking_reference if matched_booking else None,
         'slot_number': matched_booking.slot.slot_number if (matched_booking and matched_booking.slot) else None,
-        'timestamp': datetime.utcnow().strftime('%H:%M:%S')
+        'timestamp': datetime.now().strftime('%H:%M:%S')
     })
 
-    entry_time_display = (matched_booking.entry_time or matched_booking.start_time or now).strftime('%b %d, %Y - %I:%M:%S %p')
-    exit_time_display = matched_booking.exit_time.strftime('%b %d, %Y - %I:%M:%S %p') if (matched_booking and matched_booking.exit_time) else None
+    entry_time_display = live_entry_str
+    exit_time_display = now_local.strftime('%b %d, %Y - %I:%M:%S %p') if (camera_type == 'EXIT') else None
 
     return True, message, {
         'anpr_id': anpr_log.id,
@@ -483,6 +514,7 @@ def calculate_parking_fee_for_plate(location_id, plate_number, estimated_hours=1
         ).first()
 
     now = datetime.utcnow()
+    now_local = datetime.now()
     if active_booking:
         entry_time_dt = active_booking.entry_time or active_booking.start_time or now
         elapsed = (now - entry_time_dt).total_seconds()
@@ -500,7 +532,7 @@ def calculate_parking_fee_for_plate(location_id, plate_number, estimated_hours=1
         billing_hours = max(1.0, math.ceil(duration_hrs))
         total_fee = round(billing_hours * location.hourly_rate, 2)
         is_parked = False
-        entry_time = now.strftime('%b %d, %Y - %I:%M:%S %p')
+        entry_time = now_local.strftime('%b %d, %Y - %I:%M:%S %p')
         slot_number = 'N/A'
 
     return True, f"Fee calculated for {plate_number}: ₹{total_fee}", {

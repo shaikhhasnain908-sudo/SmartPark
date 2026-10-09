@@ -99,8 +99,11 @@ def upload_scan_image():
 def simulate_anpr():
     data = request.get_json() or {}
     location_id = data.get('location_id', 1)
-    plate_number = data.get('plate_number', 'GJ09AB1234')
+    plate_number = (data.get('plate_number') or '').strip()
     camera_type = data.get('camera_type', 'ENTRY')
+
+    if not plate_number:
+        return jsonify({'success': False, 'message': 'License plate number is required'}), 400
 
     success, message, result = process_anpr_plate_logic(location_id, plate_number, 0.95, camera_type)
     return jsonify({
