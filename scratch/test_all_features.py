@@ -10,7 +10,7 @@ from app import create_app
 from database import db
 from models import User, Vehicle, ParkingLocation, ParkingSlot, Booking, Invoice, ANPRLog, ActivityLog, Blacklist
 from services.booking_service import create_booking, cancel_booking
-from services.cv_service import process_anpr_plate_logic
+from services.cv_service import process_anpr_plate_logic, calculate_parking_fee_for_plate
 
 class SmartParkComprehensiveTest(unittest.TestCase):
     
@@ -127,7 +127,7 @@ class SmartParkComprehensiveTest(unittest.TestCase):
         # Simulate ANPR reading plate for entry
         success, msg, data = process_anpr_plate_logic(loc.id, veh.vehicle_number, 0.95, 'ENTRY')
         self.assertTrue(success)
-        self.assertIn(data['action'], ['ENTRY_GRANTED', 'NO_BOOKING', 'PLATE_DETECTED'])
+        self.assertEqual(data['action'], 'ENTRY_GRANTED')
         
         # Simulate Blacklisted Plate
         bl_success, bl_msg, bl_data = process_anpr_plate_logic(loc.id, 'GJ01XX9999', 0.95, 'ENTRY')
@@ -143,11 +143,42 @@ class SmartParkComprehensiveTest(unittest.TestCase):
             success, msg = cancel_booking(booking.id, cancelled_by='admin', reason='Test cancellation', user_id=admin.id)
             self.assertTrue(success, f"Admin cancellation failed: {msg}")
             
-            reloaded_booking = Booking.query.get(booking.id)
+            reloaded_booking = db.session.get(Booking, booking.id) if hasattr(db.session, 'get') else Booking.query.get(booking.id)
             self.assertEqual(reloaded_booking.status, 'CANCELLED')
-            reloaded_slot = ParkingSlot.query.get(booking.slot_id)
+            reloaded_slot = db.session.get(ParkingSlot, booking.slot_id) if hasattr(db.session, 'get') else ParkingSlot.query.get(booking.slot_id)
             self.assertEqual(reloaded_slot.status, 'FREE')
             print(" -> Admin Cancellation & Slot Release Passed!")
 
+    def test_07_manual_plate_and_fee_calculation(self):
+        print("\n[TEST 7] Testing Manual License Plate Entry, Walk-In & Fee Calculation...")
+        
+        loc = ParkingLocation.query.first()
+        test_plate = "MH12AB9999"
+        
+        # 1. Test Manual Fee Calculation via API
+        res_calc = self.client.post('/api/cv/calculate-fee', json={
+            'location_id': loc.id,
+            'plate_number': test_plate,
+            'duration_hours': 3.0
+        })
+        self.assertEqual(res_calc.status_code, 200)
+        calc_json = res_calc.get_json()
+        self.assertTrue(calc_json['success'])
+        self.assertEqual(calc_json['data']['total_fee'], round(3.0 * loc.hourly_rate, 2))
+        
+        # 2. Test Walk-In / Manual Gate Entry
+        success_entry, msg_entry, data_entry = process_anpr_plate_logic(loc.id, test_plate, 1.0, 'ENTRY')
+        self.assertTrue(success_entry)
+        self.assertEqual(data_entry['action'], 'ENTRY_GRANTED')
+        self.assertIsNotNone(data_entry['slot_number'])
+        
+        # 3. Test Walk-In / Manual Gate Exit & Fee Computation
+        success_exit, msg_exit, data_exit = process_anpr_plate_logic(loc.id, test_plate, 1.0, 'EXIT')
+        self.assertTrue(success_exit)
+        self.assertEqual(data_exit['action'], 'EXIT_COMPLETED')
+        self.assertGreater(data_exit['total_fee'], 0)
+        print(" -> Manual License Plate, Walk-In Entry & Fee Calculation Passed!")
+
 if __name__ == '__main__':
     unittest.main()
+

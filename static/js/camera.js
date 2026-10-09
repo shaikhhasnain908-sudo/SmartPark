@@ -1,4 +1,4 @@
-/* SmartPark HTML5 Camera & Auto ANPR Scanner Engine */
+/* SmartPark HTML5 Camera, Upload & Auto ANPR Scanner Engine */
 
 let mediaStream = null;
 let autoScanInterval = null;
@@ -46,10 +46,10 @@ function captureFrameBase64(videoElementId = 'webcam-video') {
   return canvas.toDataURL('image/jpeg', 0.85);
 }
 
-function scanFrameForANPR(locationId, cameraType = 'ENTRY', callback) {
+function scanFrameForANPR(locationId, cameraType = 'ENTRY', callback, manualPlate = '') {
   const base64Frame = captureFrameBase64();
-  if (!base64Frame) {
-    if (callback) callback(false, "Unable to capture frame from webcam stream.", null);
+  if (!base64Frame && !manualPlate) {
+    if (callback) callback(false, "Unable to capture frame from camera. Please upload an image or type plate number.", null);
     return;
   }
 
@@ -59,7 +59,8 @@ function scanFrameForANPR(locationId, cameraType = 'ENTRY', callback) {
     body: JSON.stringify({
       location_id: locationId,
       camera_type: cameraType,
-      frame: base64Frame
+      frame: base64Frame,
+      manual_plate: manualPlate
     })
   })
   .then(res => res.json())
@@ -68,6 +69,74 @@ function scanFrameForANPR(locationId, cameraType = 'ENTRY', callback) {
   })
   .catch(err => {
     if (callback) callback(false, "Network error during ANPR frame processing.", null);
+  });
+}
+
+function scanUploadedPlateImage(file, locationId, cameraType = 'ENTRY', manualPlate = '', callback) {
+  const formData = new FormData();
+  if (file) formData.append('file', file);
+  formData.append('location_id', locationId);
+  formData.append('camera_type', cameraType);
+  if (manualPlate) formData.append('manual_plate', manualPlate);
+
+  fetch('/api/cv/upload-scan', {
+    method: 'POST',
+    body: formData
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (callback) callback(data.success, data.message, data.data);
+  })
+  .catch(err => {
+    if (callback) callback(false, "Network error during image upload scan.", null);
+  });
+}
+
+function scanManualPlateInput(plateNumber, locationId, cameraType = 'ENTRY', callback) {
+  if (!plateNumber || !plateNumber.trim()) {
+    if (callback) callback(false, "Please enter a valid license plate number.", null);
+    return;
+  }
+
+  fetch('/api/cv/simulate-anpr', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      location_id: locationId,
+      plate_number: plateNumber,
+      camera_type: cameraType
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (callback) callback(data.success, data.message, data.data);
+  })
+  .catch(err => {
+    if (callback) callback(false, "Network error processing manual plate.", null);
+  });
+}
+
+function calculateParkingFee(plateNumber, locationId, durationHours = 1.0, callback) {
+  if (!plateNumber || !plateNumber.trim()) {
+    if (callback) callback(false, "Please enter a valid license plate number.", null);
+    return;
+  }
+
+  fetch('/api/cv/calculate-fee', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      location_id: locationId,
+      plate_number: plateNumber,
+      duration_hours: durationHours
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (callback) callback(data.success, data.message, data.data);
+  })
+  .catch(err => {
+    if (callback) callback(false, "Network error calculating parking fee.", null);
   });
 }
 

@@ -1,60 +1,144 @@
 {% extends "base.html" %}
 
-{% block title %}ANPR Camera Scanner - SmartPark{% endblock %}
+{% block title %}ANPR & License Plate Recognition - SmartPark{% endblock %}
 
 {% block content %}
 <div class="container" style="padding-top: 30px; padding-bottom: 60px;">
   
   <div style="margin-bottom: 24px; text-align: center;">
-    <h1>ANPR Vehicle Camera Scanner</h1>
-    <p style="color: var(--text-muted);">Real-time OpenCV & EasyOCR license plate recognition for automated parking verification</p>
+    <h1><i class="fa-solid fa-camera-retro" style="color: var(--accent-cyan);"></i> Smart License Plate Recognition & Fee Calculator</h1>
+    <p style="color: var(--text-muted);">Real-time OpenCV & EasyOCR plate scanning, manual plate lookup, and automated parking fee calculation</p>
   </div>
 
-  <div style="max-width: 680px; margin: 0 auto;">
+  <div style="max-width: 860px; margin: 0 auto;">
     
-    <div class="glass-card" style="padding: 24px; text-align: center;">
+    <!-- Mode Switcher Tabs -->
+    <div style="display: flex; gap: 12px; justify-content: center; margin-bottom: 24px; flex-wrap: wrap;">
+      <button onclick="switchTab('cam-tab')" id="btn-tab-cam" class="btn btn-primary" style="padding: 10px 20px;">
+        <i class="fa-solid fa-video"></i> 1. Live Camera Scanner
+      </button>
+      <button onclick="switchTab('upload-tab')" id="btn-tab-upload" class="btn btn-secondary" style="padding: 10px 20px;">
+        <i class="fa-solid fa-upload"></i> 2. Upload Plate Image
+      </button>
+      <button onclick="switchTab('manual-tab')" id="btn-tab-manual" class="btn btn-secondary" style="padding: 10px 20px;">
+        <i class="fa-solid fa-calculator"></i> 3. Manual Plate & Fee Calculator
+      </button>
+    </div>
+
+    <!-- Main Card -->
+    <div class="glass-card" style="padding: 28px;">
       
-      <!-- Target Location Picker -->
-      <div class="form-group" style="max-width: 380px; margin: 0 auto 16px;">
-        <label style="color: var(--accent-cyan); font-weight:700;"><i class="fa-solid fa-location-dot"></i> Select Entrance Gate</label>
-        <select id="user_cam_location_id" class="form-control">
+      <!-- Target Location Selector -->
+      <div class="form-group" style="max-width: 450px; margin: 0 auto 24px; text-align: center;">
+        <label style="color: var(--accent-cyan); font-weight:700; font-size: 1rem;"><i class="fa-solid fa-location-dot"></i> Select Parking Gate Location</label>
+        <select id="user_cam_location_id" class="form-control" style="font-size: 1.05rem; padding: 10px; border-color: var(--accent-cyan);">
           {% for loc in locations %}
-            <option value="{{ loc.id }}">{{ loc.name }} Gate</option>
+            <option value="{{ loc.id }}">{{ loc.name }} (₹{{ loc.hourly_rate }}/hr)</option>
           {% endfor %}
         </select>
       </div>
 
-      <!-- Video Element -->
-      <div style="position: relative; background: #000; border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 20px; height: 380px; display: flex; align-items: center; justify-content: center;">
-        <video id="webcam-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
-        
-        <!-- Bounding Box / Scan Reticle Overlay -->
-        <div id="scan-overlay" style="position: absolute; border: 2px dashed var(--accent-cyan); width: 60%; height: 35%; border-radius: 8px; box-shadow: 0 0 15px rgba(6,186,212,0.4); display: flex; align-items: center; justify-content: center; color: var(--accent-cyan); font-weight: 700; font-size: 0.85rem; pointer-events: none;">
-          ALIGN LICENSE PLATE HERE
+      <!-- TAB 1: Live Webcam Scanner -->
+      <div id="tab-cam-content" class="tab-panel">
+        <div style="position: relative; background: #000; border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 20px; height: 380px; display: flex; align-items: center; justify-content: center;">
+          <video id="webcam-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
+          
+          <div id="scan-overlay" style="position: absolute; border: 2px dashed var(--accent-cyan); width: 60%; height: 35%; border-radius: 8px; box-shadow: 0 0 15px rgba(6,186,212,0.4); display: flex; align-items: center; justify-content: center; color: var(--accent-cyan); font-weight: 700; font-size: 0.85rem; pointer-events: none;">
+            ALIGN LICENSE PLATE HERE
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
+          <button onclick="startCam()" class="btn btn-primary">
+            <i class="fa-solid fa-video"></i> Start Camera
+          </button>
+          <button onclick="stopCam()" class="btn btn-secondary">
+            <i class="fa-solid fa-video-slash"></i> Stop Camera
+          </button>
+          <button onclick="triggerScan('ENTRY')" id="scan-entry-btn" class="btn btn-success" disabled>
+            <i class="fa-solid fa-right-to-bracket"></i> Scan Entry
+          </button>
+          <button onclick="triggerScan('EXIT')" id="scan-exit-btn" class="btn btn-danger" disabled>
+            <i class="fa-solid fa-right-from-bracket"></i> Scan Exit & Fee
+          </button>
+          <button onclick="toggleAutoScan()" id="auto-scan-btn" class="btn btn-secondary" disabled>
+            <i class="fa-solid fa-robot"></i> Auto-Scan: OFF
+          </button>
         </div>
       </div>
 
-      <!-- Controls -->
-      <div style="display: flex; justify-content: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap;">
-        <button onclick="startCam()" class="btn btn-primary">
-          <i class="fa-solid fa-video"></i> Start Camera
-        </button>
-        <button onclick="stopCam()" class="btn btn-secondary">
-          <i class="fa-solid fa-video-slash"></i> Stop Camera
-        </button>
-        <button onclick="triggerScan()" id="scan-btn" class="btn btn-success" disabled>
-          <i class="fa-solid fa-expand"></i> Manual Scan
-        </button>
-        <button onclick="toggleAutoScan()" id="auto-scan-btn" class="btn btn-secondary" disabled>
-          <i class="fa-solid fa-robot"></i> Auto-Scan: OFF
-        </button>
+      <!-- TAB 2: Upload License Plate Image -->
+      <div id="tab-upload-content" class="tab-panel" style="display: none;">
+        <div style="border: 2px dashed var(--border); border-radius: var(--radius-sm); padding: 30px; text-align: center; background: rgba(30, 41, 59, 0.4); margin-bottom: 20px;">
+          <i class="fa-solid fa-cloud-arrow-up" style="font-size: 3rem; color: var(--accent-cyan); margin-bottom: 12px;"></i>
+          <h4>Upload Vehicle Photo or License Plate Image</h4>
+          <p style="color: var(--text-muted); font-size: 0.9rem;">Supports JPG, PNG, WEBP images of number plates</p>
+          
+          <input type="file" id="plate_image_file" accept="image/*" style="display: none;" onchange="previewImage(this)">
+          <button onclick="document.getElementById('plate_image_file').click()" class="btn btn-secondary" style="margin-top: 10px;">
+            <i class="fa-solid fa-folder-open"></i> Browse Image File
+          </button>
+        </div>
+
+        <div id="image-preview-container" style="display: none; text-align: center; margin-bottom: 20px;">
+          <img id="image-preview-img" style="max-height: 250px; max-width: 100%; border-radius: 8px; border: 1px solid var(--accent-cyan);">
+        </div>
+
+        <div style="display: flex; justify-content: center; gap: 14px; flex-wrap: wrap;">
+          <button onclick="processUploadedImage('ENTRY')" class="btn btn-success">
+            <i class="fa-solid fa-bolt"></i> OCR Scan Entry
+          </button>
+          <button onclick="processUploadedImage('EXIT')" class="btn btn-danger">
+            <i class="fa-solid fa-receipt"></i> OCR Scan Exit & Calculate Fee
+          </button>
+        </div>
       </div>
 
-      <!-- Scan Result Display -->
-      <div id="scan-result-card" style="display: none; background: rgba(30, 41, 59, 0.7); padding: 18px; border-radius: var(--radius-sm); border: 1px solid var(--border); text-align: left;">
-        <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-cyan); margin-bottom: 8px;">AUTOMATED ANPR RESULT</div>
-        <div id="result-status-msg" style="font-size: 1.1rem; font-weight: 700; color: #fff;"></div>
-        <div id="result-details" style="font-size: 0.88rem; color: var(--text-muted); margin-top: 6px;"></div>
+      <!-- TAB 3: Manual Number Plate Entry & Fee Calculator -->
+      <div id="tab-manual-content" class="tab-panel" style="display: none;">
+        <div style="max-width: 500px; margin: 0 auto; background: rgba(30, 41, 59, 0.5); padding: 24px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+          <h4 style="margin-bottom: 16px; color: var(--accent-cyan); text-align: center;">
+            <i class="fa-solid fa-calculator"></i> Manual License Plate & Fee Console
+          </h4>
+          
+          <div class="form-group">
+            <label><i class="fa-solid fa-car"></i> Vehicle License Plate Number</label>
+            <input type="text" id="manual_plate_input" class="form-control" placeholder="e.g. GJ09AB1234 or MH12DE5678" style="text-transform: uppercase; font-size: 1.15rem; font-weight: 700; letter-spacing: 1px;" value="GJ09AB1234">
+          </div>
+
+          <div class="form-group">
+            <label><i class="fa-solid fa-hourglass-half"></i> Estimated Duration (Hours for fee calculation)</label>
+            <input type="number" id="manual_duration_input" class="form-control" value="2.0" min="0.5" step="0.5">
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 20px;">
+            <button onclick="processManualAction('CALCULATE')" class="btn btn-primary" style="padding: 10px; font-size: 0.85rem;">
+              <i class="fa-solid fa-calculator"></i> Calculate Fee
+            </button>
+            <button onclick="processManualAction('ENTRY')" class="btn btn-success" style="padding: 10px; font-size: 0.85rem;">
+              <i class="fa-solid fa-right-to-bracket"></i> Process Entry
+            </button>
+            <button onclick="processManualAction('EXIT')" class="btn btn-danger" style="padding: 10px; font-size: 0.85rem;">
+              <i class="fa-solid fa-right-from-bracket"></i> Process Exit
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Unified Scan & Calculation Receipt Card -->
+      <div id="scan-result-card" style="display: none; margin-top: 28px; background: rgba(15, 23, 42, 0.95); padding: 22px; border-radius: var(--radius-sm); border: 1px solid var(--accent-cyan); text-align: left;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 14px;">
+          <div style="font-weight: 800; font-size: 1.05rem; color: var(--accent-cyan);"><i class="fa-solid fa-receipt"></i> ANPR SCAN & FEE BREAKDOWN RECEIPT</div>
+          <span id="result-status-badge" class="badge badge-success">SUCCESS</span>
+        </div>
+
+        <div id="result-status-msg" style="font-size: 1.1rem; font-weight: 700; color: #fff; margin-bottom: 14px;"></div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; background: rgba(30, 41, 59, 0.6); padding: 16px; border-radius: 6px;" id="result-details-grid">
+          <!-- Populated by JS -->
+        </div>
+
+        <div id="result-actions" style="margin-top: 16px; display: flex; justify-content: flex-end;"></div>
       </div>
 
     </div>
@@ -68,12 +152,31 @@
 <script>
   let autoScanEnabled = false;
 
+  function switchTab(tabName) {
+    document.querySelectorAll('.tab-panel').forEach(el => el.style.display = 'none');
+    document.getElementById('btn-tab-cam').className = 'btn btn-secondary';
+    document.getElementById('btn-tab-upload').className = 'btn btn-secondary';
+    document.getElementById('btn-tab-manual').className = 'btn btn-secondary';
+
+    if (tabName === 'cam-tab') {
+      document.getElementById('tab-cam-content').style.display = 'block';
+      document.getElementById('btn-tab-cam').className = 'btn btn-primary';
+    } else if (tabName === 'upload-tab') {
+      document.getElementById('tab-upload-content').style.display = 'block';
+      document.getElementById('btn-tab-upload').className = 'btn btn-primary';
+    } else if (tabName === 'manual-tab') {
+      document.getElementById('tab-manual-content').style.display = 'block';
+      document.getElementById('btn-tab-manual').className = 'btn btn-primary';
+    }
+  }
+
   function startCam() {
     startCameraStream('webcam-video', (success, err) => {
       if (success) {
-        document.getElementById('scan-btn').disabled = false;
+        document.getElementById('scan-entry-btn').disabled = false;
+        document.getElementById('scan-exit-btn').disabled = false;
         document.getElementById('auto-scan-btn').disabled = false;
-        showToast("Camera Active", "Webcam feed initialized.", "success");
+        showToast("Camera Active", "Webcam stream initialized successfully.", "success");
       } else {
         showToast("Camera Error", err || "Permission denied", "danger");
       }
@@ -83,7 +186,8 @@
   function stopCam() {
     stopCameraStream();
     autoScanEnabled = false;
-    document.getElementById('scan-btn').disabled = true;
+    document.getElementById('scan-entry-btn').disabled = true;
+    document.getElementById('scan-exit-btn').disabled = true;
     const autoBtn = document.getElementById('auto-scan-btn');
     autoBtn.disabled = true;
     autoBtn.innerText = "Auto-Scan: OFF";
@@ -92,30 +196,111 @@
     showToast("Camera Stopped", "Camera stream released.", "info");
   }
 
-  function updateResultUI(success, msg, data) {
-    const card = document.getElementById('scan-result-card');
-    const msgEl = document.getElementById('result-status-msg');
-    const detailsEl = document.getElementById('result-details');
-
-    card.style.display = 'block';
-    msgEl.innerText = msg;
-    
-    if (data) {
-      detailsEl.innerHTML = `
-        Detected Plate: <strong style="color:var(--primary); font-size:1.15rem;">${data.plate}</strong><br/>
-        Action Taken: <strong style="color:${data.action === 'ENTRY_GRANTED' ? 'var(--success)' : 'var(--warning)'};">${data.action}</strong> | Slot: <strong>${data.slot_number || 'N/A'}</strong>
-      `;
+  function previewImage(input) {
+    if (input.files && input.files[0]) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById('image-preview-img').src = e.target.result;
+        document.getElementById('image-preview-container').style.display = 'block';
+      };
+      reader.readAsDataURL(input.files[0]);
     }
   }
 
-  function triggerScan() {
+  function renderResultReceipt(success, msg, data) {
+    const card = document.getElementById('scan-result-card');
+    const msgEl = document.getElementById('result-status-msg');
+    const gridEl = document.getElementById('result-details-grid');
+    const actionsEl = document.getElementById('result-actions');
+    const badgeEl = document.getElementById('result-status-badge');
+
+    card.style.display = 'block';
+    msgEl.innerText = msg;
+    badgeEl.innerText = success ? 'SUCCESS' : 'WARNING';
+    badgeEl.className = `badge ${success ? 'badge-success' : 'badge-warning'}`;
+
+    if (data) {
+      gridEl.innerHTML = `
+        <div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">LICENSE PLATE NUMBER</div>
+          <div style="font-size: 1.35rem; font-weight: 800; color: var(--accent-cyan);">${data.plate || 'N/A'}</div>
+        </div>
+        <div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">ASSIGNED SLOT</div>
+          <div style="font-size: 1.35rem; font-weight: 800; color: var(--primary);">${data.slot_number || 'N/A'}</div>
+        </div>
+        <div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">DURATION / BILLING HOURS</div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #fff;">${data.duration_hours || data.billing_hours || 1.0} Hours</div>
+        </div>
+        <div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">TOTAL CALCULATED FEE</div>
+          <div style="font-size: 1.35rem; font-weight: 800; color: var(--success);">₹${data.total_fee !== undefined ? data.total_fee : (data.hourly_rate || 20.0)}</div>
+        </div>
+      `;
+
+      if (data.invoice_id) {
+        actionsEl.innerHTML = `
+          <a href="/api/invoices/${data.invoice_id}/pdf" class="btn btn-primary" target="_blank">
+            <i class="fa-solid fa-file-pdf"></i> Download PDF Invoice
+          </a>
+        `;
+      } else {
+        actionsEl.innerHTML = '';
+      }
+    }
+  }
+
+  function triggerScan(cameraType = 'ENTRY') {
     const locId = document.getElementById('user_cam_location_id').value;
-    showToast("ANPR Scanning", "Processing frame with OpenCV...", "info");
+    showToast("ANPR Scanning", `Processing frame (${cameraType})...`, "info");
     
-    scanFrameForANPR(locId, 'ENTRY', (success, msg, data) => {
-      updateResultUI(success, msg, data);
+    scanFrameForANPR(locId, cameraType, (success, msg, data) => {
+      renderResultReceipt(success, msg, data);
       showToast("ANPR Result", msg, success ? "success" : "warning");
     });
+  }
+
+  function processUploadedImage(cameraType = 'ENTRY') {
+    const fileInput = document.getElementById('plate_image_file');
+    const file = fileInput.files[0];
+    const locId = document.getElementById('user_cam_location_id').value;
+
+    if (!file) {
+      showToast("No Image File", "Please select a license plate image file to upload.", "warning");
+      return;
+    }
+
+    showToast("OCR Processing", "Analyzing uploaded image for license plate text...", "info");
+    scanUploadedPlateImage(file, locId, cameraType, '', (success, msg, data) => {
+      renderResultReceipt(success, msg, data);
+      showToast("OCR Scan Completed", msg, success ? "success" : "warning");
+    });
+  }
+
+  function processManualAction(action) {
+    const locId = document.getElementById('user_cam_location_id').value;
+    const plate = document.getElementById('manual_plate_input').value.trim();
+    const duration = parseFloat(document.getElementById('manual_duration_input').value) || 1.0;
+
+    if (!plate) {
+      showToast("Plate Required", "Please enter a valid license plate number.", "warning");
+      return;
+    }
+
+    if (action === 'CALCULATE') {
+      showToast("Calculating Fee", `Computing parking fee for ${plate}...`, "info");
+      calculateParkingFee(plate, locId, duration, (success, msg, data) => {
+        renderResultReceipt(success, msg, data);
+        showToast("Fee Calculated", msg, "success");
+      });
+    } else {
+      showToast("Processing Gate Action", `Processing ${action} for ${plate}...`, "info");
+      scanManualPlateInput(plate, locId, action, (success, msg, data) => {
+        renderResultReceipt(success, msg, data);
+        showToast("Gate Action Processed", msg, success ? "success" : "warning");
+      });
+    }
   }
 
   function toggleAutoScan() {
@@ -129,7 +314,7 @@
       autoBtn.classList.add('btn-success');
 
       startAutoANPRScan(locId, 'ENTRY', (success, msg, data) => {
-        updateResultUI(success, msg, data);
+        renderResultReceipt(success, msg, data);
       });
       showToast("Auto-Scan Loop", "Continuous ANPR scanning active (2s interval)", "success");
     } else {

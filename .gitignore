@@ -37,3 +37,7 @@ venv.bak/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Generated uploads
+static/uploads/invoices/*.pdf
+

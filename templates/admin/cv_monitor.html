@@ -24,7 +24,7 @@
     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px;">
       <div>
         <h1>Computer Vision AI & ANPR Gate Control</h1>
-        <p style="color: var(--text-muted);">Real-time OpenCV, EasyOCR & YOLO vehicle plate detection pipeline</p>
+        <p style="color: var(--text-muted);">Real-time OpenCV, EasyOCR & YOLO vehicle plate detection & fee engine</p>
       </div>
     </div>
 
@@ -59,20 +59,20 @@
         </div>
       </div>
 
-      <!-- ANPR Simulator Panel for Presentation -->
+      <!-- ANPR Simulator Panel for Presentation & Manual Fee Calculation -->
       <div class="glass-card" style="padding: 20px; background: rgba(15, 23, 42, 0.9);">
         <h3 style="font-size: 1.1rem; margin-bottom: 16px; color: var(--accent-cyan);">
-          <i class="fa-solid fa-terminal"></i> Gate ANPR Simulator
+          <i class="fa-solid fa-terminal"></i> Gate ANPR & Fee Simulator
         </h3>
-        <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 20px;">
-          Simulate ANPR vehicle arrival/departure for college live demo presentation.
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">
+          Process manual license plates or calculate parking fees live.
         </p>
 
         <div class="form-group">
           <label>Target Parking Location</label>
           <select id="sim_location_id" class="form-control">
             {% for loc in locations %}
-              <option value="{{ loc.id }}">{{ loc.name }}</option>
+              <option value="{{ loc.id }}">{{ loc.name }} (₹{{ loc.hourly_rate }}/hr)</option>
             {% endfor %}
           </select>
         </div>
@@ -82,12 +82,20 @@
           <input type="text" id="sim_plate_number" class="form-control" value="GJ09AB1234" style="text-transform: uppercase;">
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px;">
-          <button onclick="triggerSimANPR('ENTRY')" class="btn btn-success" style="padding: 10px; font-size: 0.85rem;">
-            <i class="fa-solid fa-right-to-bracket"></i> Simulate Entry
+        <div class="form-group">
+          <label>Or Upload Plate Image File</label>
+          <input type="file" id="admin_plate_file" accept="image/*" class="form-control" style="font-size: 0.8rem;">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px;">
+          <button onclick="calcAdminFee()" class="btn btn-primary" style="padding: 8px; font-size: 0.8rem;">
+            <i class="fa-solid fa-calculator"></i> Calc Fee
           </button>
-          <button onclick="triggerSimANPR('EXIT')" class="btn btn-danger" style="padding: 10px; font-size: 0.85rem;">
-            <i class="fa-solid fa-right-from-bracket"></i> Simulate Exit
+          <button onclick="triggerSimANPR('ENTRY')" class="btn btn-success" style="padding: 8px; font-size: 0.8rem;">
+            <i class="fa-solid fa-right-to-bracket"></i> Entry
+          </button>
+          <button onclick="triggerSimANPR('EXIT')" class="btn btn-danger" style="padding: 8px; font-size: 0.8rem;">
+            <i class="fa-solid fa-right-from-bracket"></i> Exit
           </button>
         </div>
 
@@ -152,31 +160,68 @@
     });
   }
 
-  function triggerSimANPR(cameraType) {
+  function calcAdminFee() {
     const locationId = document.getElementById('sim_location_id').value;
     const plateNumber = document.getElementById('sim_plate_number').value.trim();
 
-    fetch('/api/cv/simulate-anpr', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        location_id: locationId,
-        plate_number: plateNumber,
-        camera_type: cameraType
-      })
-    })
-    .then(res => res.json())
-    .then(data => {
+    calculateParkingFee(plateNumber, locationId, 1.0, (success, msg, data) => {
       const box = document.getElementById('sim-output-box');
       const title = document.getElementById('sim-out-title');
-      const msg = document.getElementById('sim-out-msg');
+      const msgEl = document.getElementById('sim-out-msg');
 
       box.style.display = 'block';
-      title.innerText = data.message;
-      msg.innerText = `Plate: ${plateNumber} | Action: ${data.data ? data.data.action : 'N/A'}`;
-
-      showToast("ANPR Simulation Event", data.message, data.success ? "success" : "warning");
+      title.innerText = msg;
+      if (data) {
+        msgEl.innerHTML = `
+          Plate: <strong>${data.plate}</strong> | Duration: <strong>${data.duration_hours} hrs</strong><br/>
+          Total Fee: <strong style="color:var(--success); font-size:1.1rem;">₹${data.total_fee}</strong>
+        `;
+      }
+      showToast("Fee Calculation", msg, "success");
     });
+  }
+
+  function triggerSimANPR(cameraType) {
+    const locationId = document.getElementById('sim_location_id').value;
+    const plateNumber = document.getElementById('sim_plate_number').value.trim();
+    const fileInput = document.getElementById('admin_plate_file');
+    const file = fileInput.files ? fileInput.files[0] : null;
+
+    if (file) {
+      scanUploadedPlateImage(file, locationId, cameraType, plateNumber, (success, msg, data) => {
+        const box = document.getElementById('sim-output-box');
+        const title = document.getElementById('sim-out-title');
+        const msgEl = document.getElementById('sim-out-msg');
+
+        box.style.display = 'block';
+        title.innerText = msg;
+        msgEl.innerHTML = `Plate: <strong>${data ? data.plate : plateNumber}</strong> | Action: <strong>${data ? data.action : 'N/A'}</strong> | Slot: <strong>${data ? (data.slot_number || 'N/A') : 'N/A'}</strong> | Total Fee: <strong style="color:var(--success);">₹${data ? (data.total_fee || 0) : 0}</strong>`;
+        showToast("ANPR Event", msg, success ? "success" : "warning");
+      });
+    } else {
+      fetch('/api/cv/simulate-anpr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          location_id: locationId,
+          plate_number: plateNumber,
+          camera_type: cameraType
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        const box = document.getElementById('sim-output-box');
+        const title = document.getElementById('sim-out-title');
+        const msgEl = document.getElementById('sim-out-msg');
+
+        box.style.display = 'block';
+        title.innerText = data.message;
+        const result = data.data || {};
+        msgEl.innerHTML = `Plate: <strong>${result.plate || plateNumber}</strong> | Action: <strong>${result.action || 'N/A'}</strong> | Slot: <strong>${result.slot_number || 'N/A'}</strong> | Total Fee: <strong style="color:var(--success);">₹${result.total_fee || 0}</strong>`;
+
+        showToast("ANPR Simulation Event", data.message, data.success ? "success" : "warning");
+      });
+    }
   }
 </script>
 {% endblock %}
