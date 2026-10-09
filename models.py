@@ -136,6 +136,8 @@ class Booking(db.Model):
     
     start_time = db.Column(db.DateTime, nullable=False)
     end_time = db.Column(db.DateTime, nullable=False)
+    entry_time = db.Column(db.DateTime, nullable=True)
+    exit_time = db.Column(db.DateTime, nullable=True)
     duration_hours = db.Column(db.Float, nullable=False, default=1.0)
     hourly_rate = db.Column(db.Float, nullable=False, default=20.0)
     total_amount = db.Column(db.Float, nullable=False, default=20.0)
@@ -162,6 +164,8 @@ class Booking(db.Model):
             'slot_number': self.slot.slot_number if self.slot else 'N/A',
             'start_time': self.start_time.strftime('%Y-%m-%d %H:%M'),
             'end_time': self.end_time.strftime('%Y-%m-%d %H:%M'),
+            'entry_time': self.entry_time.strftime('%b %d, %Y %I:%M:%S %p') if self.entry_time else (self.start_time.strftime('%b %d, %Y %I:%M:%S %p') if self.start_time else None),
+            'exit_time': self.exit_time.strftime('%b %d, %Y %I:%M:%S %p') if self.exit_time else (self.end_time.strftime('%b %d, %Y %I:%M:%S %p') if self.end_time else None),
             'duration_hours': self.duration_hours,
             'total_amount': self.total_amount,
             'status': self.status,

@@ -224,13 +224,24 @@
         <div>
           <div style="font-size: 0.8rem; color: var(--text-muted);">LICENSE PLATE NUMBER</div>
           <div style="font-size: 1.35rem; font-weight: 800; color: var(--accent-cyan);">${data.plate || 'N/A'}</div>
+          <div style="font-size: 0.75rem; color: var(--success); font-weight: 700; margin-top: 2px;">✔ VEHICLE REGISTERED IN DB</div>
         </div>
         <div>
           <div style="font-size: 0.8rem; color: var(--text-muted);">ASSIGNED SLOT</div>
           <div style="font-size: 1.35rem; font-weight: 800; color: var(--primary);">${data.slot_number || 'N/A'}</div>
         </div>
+        <div style="grid-column: span 2; background: rgba(6, 186, 212, 0.12); padding: 12px; border-radius: 6px; border-left: 4px solid var(--accent-cyan);">
+          <div style="font-size: 0.82rem; color: var(--accent-cyan); font-weight: 700;"><i class="fa-solid fa-clock"></i> LIVE ENTRY TIMESTAMP</div>
+          <div style="font-size: 1.15rem; font-weight: 800; color: #fff;">${data.entry_time || 'Just Now'}</div>
+        </div>
+        ${data.exit_time ? `
+        <div style="grid-column: span 2; background: rgba(239, 68, 68, 0.12); padding: 10px; border-radius: 6px; border-left: 4px solid var(--danger);">
+          <div style="font-size: 0.82rem; color: var(--danger); font-weight: 700;"><i class="fa-solid fa-right-from-bracket"></i> EXIT TIMESTAMP</div>
+          <div style="font-size: 1.05rem; font-weight: 800; color: #fff;">${data.exit_time}</div>
+        </div>
+        ` : ''}
         <div>
-          <div style="font-size: 0.8rem; color: var(--text-muted);">DURATION / BILLING HOURS</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">STAY DURATION</div>
           <div style="font-size: 1.1rem; font-weight: 700; color: #fff;">${data.duration_hours || data.billing_hours || 1.0} Hours</div>
         </div>
         <div>
