@@ -67,11 +67,18 @@
         </div>
       </div>
 
-      <div style="display: flex; gap: 16px; justify-content: flex-end;">
+      <div style="display: flex; gap: 16px; justify-content: flex-end; flex-wrap: wrap;">
         {% if invoice %}
           <a href="{{ url_for('api.download_invoice_pdf', invoice_id=invoice.id) }}" class="btn btn-primary" style="padding: 12px 24px;">
             <i class="fa-solid fa-file-pdf"></i> Download Invoice PDF
           </a>
+        {% endif %}
+        {% if booking.status == 'CONFIRMED' or booking.status == 'ACTIVE' or booking.status == 'RESERVED' %}
+          <form method="POST" action="{{ url_for('user.cancel_user_booking', booking_id=booking.id) }}" onsubmit="return confirm('Are you sure you want to cancel this booking?');" style="margin: 0;">
+            <button type="submit" class="btn btn-danger" style="padding: 12px 24px;">
+              <i class="fa-solid fa-ban"></i> Cancel Booking
+            </button>
+          </form>
         {% endif %}
       </div>
 

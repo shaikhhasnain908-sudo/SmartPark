@@ -150,14 +150,10 @@ def cancel_booking(booking_id, cancelled_by='user', reason=None, user_id=None):
     if booking.status in ['CANCELLED', 'COMPLETED', 'EXPIRED']:
         return False, f"Booking is already {booking.status.lower()}."
 
-    # If user-initiated, verify authorization & cancellation rules
+    # If user-initiated, verify authorization
     if cancelled_by == 'user':
-        if booking.user_id != user_id:
+        if booking.user_id and user_id and booking.user_id != user_id:
             return False, "Unauthorized action."
-        
-        # User cancellation rule check: e.g. at least 30 mins prior to start_time
-        if datetime.utcnow() > (booking.start_time - timedelta(minutes=5)):
-            return False, "Cancellation window has expired for this booking."
 
     # Update Booking Status
     booking.status = 'CANCELLED'

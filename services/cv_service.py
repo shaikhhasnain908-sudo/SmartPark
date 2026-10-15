@@ -122,6 +122,10 @@ def clean_plate_text(raw_text):
             following = [rem] if rem else []
             following.extend(tokens[i+1 : i+6])
             joined_after = ''.join(following)
+            if len(joined_after) >= 2:
+                c0 = '0' if joined_after[0] in {'O', 'o', 'Q', 'D'} else ('1' if joined_after[0] in {'I', 'i', 'l', 'L'} else joined_after[0])
+                c1 = '0' if joined_after[1] in {'O', 'o', 'Q', 'D'} else ('1' if joined_after[1] in {'I', 'i', 'l', 'L'} else joined_after[1])
+                joined_after = c0 + c1 + joined_after[2:]
 
             # Format 1: Glitched 3-digit RTO with leading zero (e.g. '037MF4477' -> '03' + 'MF' + '4477')
             m_g0 = re.search(r'0([0-9])[0-9]\s*([A-Z]{1,3})\s*([0-9]{3,4})', joined_after)
@@ -321,7 +325,7 @@ def perform_anpr_ocr(img):
             if any(w in raw_t.upper() for w in ['ALIGN', 'RECEIPT', 'BREAKDOWN', 'ENTER', 'CONFIRM', 'REGISTER', 'GRANT', 'ENTRY', 'CANCEL', 'BUTTON', 'E.G.', 'EG', 'CAMERA', 'CALCULATE', 'AUTO-SCAN']):
                 continue
             c_tok = clean_plate_text(raw_t)
-            if c_tok and len(c_tok) >= 8 and c_tok[:2] in INDIAN_STATE_CODES:
+            if c_tok and len(c_tok) >= 7 and c_tok[:2] in INDIAN_STATE_CODES:
                 score = 3.5 + float(res[2])
                 return (c_tok, score, float(res[2]), (int(offset[0] / scale), int(offset[1] / scale), orig_w, orig_h))
 
@@ -334,7 +338,7 @@ def perform_anpr_ocr(img):
                 if any(w in w_str.upper() for w in ['ALIGN', 'RECEIPT', 'BREAKDOWN', 'REGISTER', 'GRANT', 'ENTRY', 'BUTTON', 'E.G.', 'EG']):
                     continue
                 c_win = clean_plate_text(w_str)
-                if c_win and len(c_win) >= 8 and c_win[:2] in INDIAN_STATE_CODES:
+                if c_win and len(c_win) >= 7 and c_win[:2] in INDIAN_STATE_CODES:
                     avg_c = sum([float(t[2]) for t in window]) / float(w_size)
                     score = avg_c + 2.0
                     return (c_win, score, avg_c, (int(offset[0] / scale), int(offset[1] / scale), orig_w, orig_h))

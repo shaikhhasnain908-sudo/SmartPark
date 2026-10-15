@@ -181,7 +181,16 @@
                 </span>
               </td>
               <td>
-                <a href="{{ url_for('user.view_booking', booking_id=b.id) }}" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">View</a>
+                <div style="display: flex; gap: 6px;">
+                  <a href="{{ url_for('user.view_booking', booking_id=b.id) }}" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">View</a>
+                  {% if b.status == 'CONFIRMED' or b.status == 'ACTIVE' or b.status == 'RESERVED' %}
+                  <form method="POST" action="{{ url_for('user.cancel_user_booking', booking_id=b.id) }}" onsubmit="return confirm('Are you sure you want to cancel booking #{{ b.booking_reference }}?');" style="display: inline; margin: 0;">
+                    <button type="submit" class="btn btn-danger" style="padding: 4px 10px; font-size: 0.75rem;">
+                      <i class="fa-solid fa-ban"></i> Cancel
+                    </button>
+                  </form>
+                  {% endif %}
+                </div>
               </td>
             </tr>
           {% else %}
