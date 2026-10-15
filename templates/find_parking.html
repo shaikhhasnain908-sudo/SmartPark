@@ -1,66 +1,216 @@
 {% extends "base.html" %}
 
-{% block title %}Find Parking - SmartPark Live Google Maps & GPS{% endblock %}
+{% block title %}Find Parking - Live Real-Time Map & Proximity Radar{% endblock %}
 
 {% block extra_head %}
 {% if google_maps_key %}
   <script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_key }}&libraries=places"></script>
 {% endif %}
+<style>
+  @keyframes pulsePin {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+    70% { transform: scale(1.1); box-shadow: 0 0 0 14px rgba(239, 68, 68, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  }
+  .radius-filter-btn {
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    border-radius: 20px;
+    transition: all 0.2s ease;
+  }
+  .zone-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+</style>
 {% endblock %}
 
 {% block content %}
-<div class="container" style="padding-top: 30px;">
+<div class="container" style="padding-top: 24px; padding-bottom: 50px;">
   
-  <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 24px;">
+  <!-- Top Header with Search and Actions -->
+  <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 20px;">
     <div>
-      <h1>Live Google Maps & GPS Parking Hubs</h1>
-      <p style="color: var(--text-muted);">Real-time GPS distance tracking, availability & route navigation</p>
+      <h1 style="font-size: 1.8rem; display: flex; align-items: center; gap: 10px;">
+        <i class="fa-solid fa-map-location-dot" style="color: var(--accent-cyan);"></i> Live Real-Time Parking Map
+      </h1>
+      <p style="color: var(--text-muted); font-size: 0.9rem;">
+        Click anywhere on the map to find available slots within <strong>500m</strong> and <strong>1000m</strong> radius
+      </p>
     </div>
     
-    <div style="display: flex; gap: 12px;">
-      <button onclick="getUserLocation()" class="btn btn-primary">
-        <i class="fa-solid fa-location-crosshairs"></i> Refresh Live Location
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+      <!-- Search Input -->
+      <div style="display: flex; background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;">
+        <input type="text" id="map-search-input" placeholder="Search address, landmark..." style="background: transparent; border: none; padding: 8px 14px; color: #fff; font-size: 0.88rem; outline: none; width: 220px;" onkeypress="if(event.key==='Enter') executeSearch()">
+        <button onclick="executeSearch()" class="btn btn-secondary" style="border: none; border-radius: 0; padding: 8px 14px;">
+          <i class="fa-solid fa-magnifying-glass"></i>
+        </button>
+      </div>
+
+      <!-- Live GPS Button -->
+      <button onclick="getUserLocation()" class="btn btn-primary" style="padding: 8px 16px;">
+        <i class="fa-solid fa-location-crosshairs"></i> My Live GPS
+      </button>
+
+      <!-- API Key Modal Trigger -->
+      <button onclick="openApiKeyModal()" class="btn btn-secondary" style="padding: 8px 14px;" title="Configure Map API Key">
+        <i class="fa-solid fa-key" style="color: #f59e0b;"></i> API Key
       </button>
     </div>
   </div>
 
-  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+  <!-- Interactive Filter Toolbar -->
+  <div class="glass-card" style="padding: 14px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;">
     
-    <!-- Map Container -->
-    <div class="glass-card" style="padding: 16px;">
-      <div id="map" style="width: 100%; height: 530px; border-radius: var(--radius-sm);"></div>
+    <!-- Proximity Filter Buttons -->
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); margin-right: 4px;">Proximity:</span>
+      <button onclick="setRadiusFilter('ALL')" id="filter-btn-all" class="btn btn-primary radius-filter-btn">
+        All Hubs (<span id="filter-count-all">{{ locations | length }}</span>)
+      </button>
+      <button onclick="setRadiusFilter('500')" id="filter-btn-500" class="btn btn-secondary radius-filter-btn" style="border-color: rgba(6,186,212,0.5);">
+        ⚡ Under 500m (<span id="filter-count-500">0</span>)
+      </button>
+      <button onclick="setRadiusFilter('1000')" id="filter-btn-1000" class="btn btn-secondary radius-filter-btn" style="border-color: rgba(129,140,248,0.5);">
+        🚗 Under 1000m (<span id="filter-count-1000">0</span>)
+      </button>
     </div>
 
-    <!-- Parking Locations List with Distance Badges -->
-    <div style="display: flex; flex-direction: column; gap: 16px; max-height: 560px; overflow-y: auto;">
-      {% for loc in locations %}
-        <div class="glass-card" style="padding: 18px;">
-          <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px;">
-            <div>
-              <h3 style="font-size: 1.1rem; color: #fff;">{{ loc.name }}</h3>
-              <span id="dist-badge-{{ loc.id }}" class="badge badge-info" style="display:none; margin-top:4px; font-size:0.75rem;"></span>
-            </div>
-            <span class="badge {% if loc.available_slots > 5 %}badge-success{% elif loc.available_slots > 0 %}badge-warning{% else %}badge-danger{% endif %}">
-              {% if loc.available_slots > 0 %}{{ loc.available_slots }} Free{% else %}FULL{% endif %}
-            </span>
-          </div>
-          
-          <p style="color: var(--text-muted); font-size: 0.82rem; margin-bottom: 12px;">{{ loc.address }}</p>
-          
-          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.88rem; margin-bottom: 14px;">
-            <div>Rate: <strong>₹{{ loc.hourly_rate }}/hr</strong></div>
-            <div>Slots: <strong>{{ loc.available_slots }}/{{ loc.total_slots }}</strong></div>
-          </div>
-
-          <a href="{{ url_for('user.book_slot', location_id=loc.id) }}" class="btn btn-primary" style="width: 100%; padding: 8px 14px; font-size: 0.85rem;">
-            <i class="fa-solid fa-calendar-check"></i> Book Parking
-          </a>
-        </div>
-      {% endfor %}
+    <!-- Availability Toggle (Remove permanently used / full parking) -->
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.88rem; font-weight: 600; color: #fff; margin: 0;">
+        <input type="checkbox" id="hide-unavailable-checkbox" checked onchange="toggleHideUnavailable(this)" style="width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer;">
+        <span>Show Available Slots Only (Hide Full)</span>
+      </label>
     </div>
 
   </div>
 
+  <!-- Live Target Radar Summary Banner (Shown when user clicks on map) -->
+  <div id="map-radar-summary" class="glass-card" style="display: none; padding: 14px 20px; margin-bottom: 20px; background: rgba(15, 23, 42, 0.95); border-left: 4px solid var(--accent-cyan);">
+    <!-- Dynamically populated by JS -->
+  </div>
+
+  <!-- Main Grid: Map (Left) + Locations Sidebar (Right) -->
+  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+    
+    <!-- Left: Map Container & Legend -->
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div class="glass-card" style="padding: 12px; position: relative;">
+        <!-- Click Map Hint Badge -->
+        <div style="position: absolute; top: 22px; right: 22px; z-index: 1000; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px); padding: 6px 14px; border-radius: 20px; border: 1px solid var(--accent-cyan); font-size: 0.78rem; font-weight: 700; color: var(--accent-cyan); pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.4);">
+          <i class="fa-solid fa-hand-pointer"></i> Click anywhere on the map to inspect nearby parking
+        </div>
+
+        <div id="map" style="width: 100%; height: 560px; border-radius: var(--radius-sm);"></div>
+      </div>
+
+      <!-- Map Legend -->
+      <div class="glass-card" style="padding: 10px 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+        <div class="zone-legend-item">
+          <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #ef4444;"></span> Target Search Pin
+        </div>
+        <div class="zone-legend-item">
+          <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #06b6d4;"></span> 500m Walking Zone
+        </div>
+        <div class="zone-legend-item">
+          <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #818cf8;"></span> 1000m (1km) Driving Zone
+        </div>
+        <div class="zone-legend-item">
+          <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #10b981;"></span> Available (>5 slots)
+        </div>
+        <div class="zone-legend-item">
+          <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #f59e0b;"></span> Limited (&le;30%)
+        </div>
+        <div class="zone-legend-item">
+          <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #ef4444;"></span> Full (Occupied)
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Parking Locations Sidebar -->
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <h3 style="font-size: 1.15rem; color: #fff; margin: 0;">
+          <i class="fa-solid fa-square-parking" style="color: var(--primary);"></i> Nearby Parking Hubs
+        </h3>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">Real-time live updates</span>
+      </div>
+
+      <div id="locations-sidebar-list" style="display: flex; flex-direction: column; gap: 14px; max-height: 600px; overflow-y: auto; padding-right: 4px;">
+        <!-- Initial Server Rendered fallback, dynamically re-rendered by map.js on click -->
+        {% for loc in locations %}
+          <div class="glass-card" style="padding: 18px; border-left: 4px solid var(--primary);" id="loc-card-{{ loc.id }}">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px;">
+              <div>
+                <h3 style="font-size: 1.05rem; color: #fff; margin-bottom: 4px;">{{ loc.name }}</h3>
+                <span id="dist-badge-{{ loc.id }}" class="badge badge-info" style="display:none; font-size:0.75rem;"></span>
+              </div>
+              <span class="badge {% if loc.available_slots > 5 %}badge-success{% elif loc.available_slots > 0 %}badge-warning{% else %}badge-danger{% endif %}">
+                {% if loc.available_slots > 0 %}{{ loc.available_slots }} Free{% else %}FULL{% endif %}
+              </span>
+            </div>
+            
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 10px;">{{ loc.address }}</p>
+            
+            <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; margin-bottom: 12px; background: rgba(30,41,59,0.5); padding: 6px 10px; border-radius: 6px;">
+              <div>Rate: <strong>₹{{ loc.hourly_rate }}/hr</strong></div>
+              <div>Slots: <strong>{{ loc.available_slots }} / {{ loc.total_slots }}</strong></div>
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+              <a href="{{ url_for('user.book_slot', location_id=loc.id) }}" class="btn btn-primary" style="flex: 1; padding: 8px 12px; font-size: 0.85rem; text-align: center; text-decoration: none;">
+                <i class="fa-solid fa-calendar-check"></i> Book Slot
+              </a>
+              <button onclick="focusMapLocation({{ loc.latitude }}, {{ loc.longitude }}, '{{ loc.name }}')" class="btn btn-secondary" style="padding: 8px 12px; font-size: 0.85rem;" title="Show on Map">
+                <i class="fa-solid fa-location-dot"></i>
+              </button>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Modal: Map API Key Settings -->
+<div id="api-key-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); z-index: 9999; align-items: center; justify-content: center;">
+  <div class="glass-card" style="max-width: 500px; width: 90%; padding: 28px; background: rgba(15, 23, 42, 0.95); border: 1px solid var(--accent-cyan);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <h3 style="margin: 0; font-size: 1.25rem; color: var(--accent-cyan); display: flex; align-items: center; gap: 8px;">
+        <i class="fa-solid fa-key" style="color: #f59e0b;"></i> Map API Key Configuration
+      </h3>
+      <button onclick="closeApiKeyModal()" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 16px;">
+      SmartPark supports live Google Maps & Mapbox with automatic zero-cost Leaflet OpenStreetMap fallback. Enter your API key below to activate Google Maps:
+    </p>
+
+    <div class="form-group" style="margin-bottom: 16px;">
+      <label style="font-size: 0.85rem; font-weight: 700; color: #fff;">Google Maps API Key</label>
+      <input type="text" id="custom-gmaps-key-input" class="form-control" placeholder="AIzaSy..." style="font-size: 0.9rem;">
+      <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; display: block;">
+        Stored in browser session. Leave empty to use free Leaflet OpenStreetMap engine.
+      </span>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 10px;">
+      <button onclick="closeApiKeyModal()" class="btn btn-secondary" style="padding: 8px 16px;">Cancel</button>
+      <button onclick="saveCustomApiKey()" class="btn btn-primary" style="padding: 8px 18px;">
+        <i class="fa-solid fa-floppy-disk"></i> Save & Reload Map
+      </button>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -70,7 +220,13 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     locationsData = {{ locations_json | tojson }};
-    initSmartParkMap('map', locationsData, "{{ google_maps_key or '' }}");
+    const serverKey = "{{ google_maps_key or '' }}";
+    const savedKey = localStorage.getItem('SMARTPARK_GMAPS_KEY') || serverKey;
+
+    initSmartParkMap('map', locationsData, savedKey);
+
+    // Initial render of sidebar
+    updateLocationsSidebarUI();
 
     // Auto-locate GPS position on load
     getUserLocation();
@@ -79,13 +235,43 @@
   function getUserLocation() {
     requestUserLocation(
       (lat, lng) => {
-        showToast("GPS Active", `Location acquired (${lat.toFixed(4)}, ${lng.toFixed(4)}). Distances updated.`, "success");
+        showToast("Live GPS Active", `Position acquired (${lat.toFixed(4)}, ${lng.toFixed(4)}). Nearby parking hubs computed.`, "success");
       },
       (err) => {
-        showToast("Location Access", err || "Click 'Refresh Live Location' to enable GPS.", "info");
+        showToast("Location Access", err || "Click anywhere on the map to set a search point.", "info");
       },
       locationsData
     );
+  }
+
+  function executeSearch() {
+    const q = document.getElementById('map-search-input').value.trim();
+    if (q) {
+      searchAddressOnMap(q);
+    }
+  }
+
+  function openApiKeyModal() {
+    const savedKey = localStorage.getItem('SMARTPARK_GMAPS_KEY') || "{{ google_maps_key or '' }}";
+    document.getElementById('custom-gmaps-key-input').value = savedKey;
+    document.getElementById('api-key-modal').style.display = 'flex';
+  }
+
+  function closeApiKeyModal() {
+    document.getElementById('api-key-modal').style.display = 'none';
+  }
+
+  function saveCustomApiKey() {
+    const key = document.getElementById('custom-gmaps-key-input').value.trim();
+    if (key) {
+      localStorage.setItem('SMARTPARK_GMAPS_KEY', key);
+      showToast("API Key Saved", "Reloading map engine with Google Maps key...", "success");
+    } else {
+      localStorage.removeItem('SMARTPARK_GMAPS_KEY');
+      showToast("Default Engine", "Using free high-performance OpenStreetMap Leaflet engine.", "info");
+    }
+    closeApiKeyModal();
+    setTimeout(() => window.location.reload(), 600);
   }
 </script>
 {% endblock %}
