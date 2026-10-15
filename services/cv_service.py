@@ -200,8 +200,12 @@ def clean_plate_text(raw_text):
 
     # Sliding window with OCR confusion correction (e.g. 'TNO3MF447S' -> 'TN03MF4475')
     for length in [10, 9, 8, 11, 7]:
-        for i in range(0, max(1, len(cleaned) - length + 1)):
+        if len(cleaned) < length:
+            continue
+        for i in range(0, len(cleaned) - length + 1):
             chunk = cleaned[i:i+length]
+            if len(chunk) < 2:
+                continue
             s0 = STATE_FIRST_LETTER_CORRECTION.get(chunk[0], chunk[0])
             s1 = chunk[1]
             st = s0 + s1
