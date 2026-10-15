@@ -36,13 +36,40 @@
     <div class="glass-card" style="padding: 28px;">
       
       <!-- Target Location Selector -->
-      <div class="form-group" style="max-width: 450px; margin: 0 auto 24px; text-align: center;">
+      <div class="form-group" style="max-width: 450px; margin: 0 auto 16px; text-align: center;">
         <label style="color: var(--accent-cyan); font-weight:700; font-size: 1rem;"><i class="fa-solid fa-location-dot"></i> Select Parking Gate Location</label>
         <select id="user_cam_location_id" class="form-control" style="font-size: 1.05rem; padding: 10px; border-color: var(--accent-cyan);">
           {% for loc in locations %}
             <option value="{{ loc.id }}">{{ loc.name }} (₹{{ loc.hourly_rate }}/hr)</option>
           {% endfor %}
         </select>
+      </div>
+
+      <!-- 1-Click Real-World Number Plates Bar for Instant Testing -->
+      <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid var(--accent-cyan); border-radius: 8px; padding: 12px 16px; margin: 0 auto 24px; max-width: 760px; text-align: center; box-shadow: 0 0 15px rgba(6,186,212,0.15);">
+        <div style="font-size: 0.82rem; font-weight: 700; color: var(--accent-cyan); margin-bottom: 8px; letter-spacing: 0.04em;">
+          <i class="fa-solid fa-bolt" style="color: #f59e0b;"></i> QUICK 1-CLICK REAL-WORLD PLATES DEMO (INSTANT RECOGNITION & DASHBOARD TEST)
+        </div>
+        <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+          <button type="button" onclick="quickDemoPlate('KA81T9874')" class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.8rem; font-weight: 700; border: 1px solid rgba(6,186,212,0.4);">
+            🚗 KA 81 T 9874
+          </button>
+          <button type="button" onclick="quickDemoPlate('DL01CA1111')" class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.8rem; font-weight: 700; border: 1px solid rgba(6,186,212,0.4);">
+            🚗 DL 01 CA 1111
+          </button>
+          <button type="button" onclick="quickDemoPlate('MH12DE1433')" class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.8rem; font-weight: 700; border: 1px solid rgba(6,186,212,0.4);">
+            🚗 MH 12 DE 1433
+          </button>
+          <button type="button" onclick="quickDemoPlate('GJ01AB1234')" class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.8rem; font-weight: 700; border: 1px solid rgba(6,186,212,0.4);">
+            🚗 GJ 01 AB 1234
+          </button>
+          <button type="button" onclick="quickDemoPlate('TN03MF4477')" class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.8rem; font-weight: 700; border: 1px solid rgba(6,186,212,0.4);">
+            🚗 TN 03 MF 4477
+          </button>
+          <button type="button" onclick="quickDemoPlate('HR26DK8337')" class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.8rem; font-weight: 700; border: 1px solid rgba(6,186,212,0.4);">
+            🚗 HR 26 DK 8337
+          </button>
+        </div>
       </div>
 
       <!-- TAB 1: Live Webcam Scanner -->
@@ -383,6 +410,15 @@
         showToast("Gate Action Processed", msg, success ? "success" : "warning");
       });
     }
+  }
+
+  function quickDemoPlate(plate) {
+    const locId = document.getElementById('user_cam_location_id').value;
+    showToast("Gate Action", `Processing real-world plate ${plate}...`, "info");
+    scanManualPlateInput(plate, locId, 'ENTRY', (success, msg, data) => {
+      renderResultReceipt(success, msg, data);
+      showToast("Gate Action Completed", msg, success ? "success" : "warning");
+    });
   }
 
   function toggleAutoScan() {

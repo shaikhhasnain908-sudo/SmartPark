@@ -53,13 +53,22 @@ function captureFrameBase64(videoElementId = 'webcam-video') {
   const video = document.getElementById(videoElementId);
   if (!video || !video.videoWidth) return null;
 
-  const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  let targetW = video.videoWidth;
+  let targetH = video.videoHeight;
+  const maxDim = 1280;
+  if (Math.max(targetW, targetH) > maxDim) {
+    const scale = maxDim / Math.max(targetW, targetH);
+    targetW = Math.round(targetW * scale);
+    targetH = Math.round(targetH * scale);
+  }
 
-  return canvas.toDataURL('image/jpeg', 0.95);
+  const canvas = document.createElement('canvas');
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, targetW, targetH);
+
+  return canvas.toDataURL('image/jpeg', 0.88);
 }
 
 function scanFrameForANPR(locationId, cameraType = 'ENTRY', callback, manualPlate = '') {

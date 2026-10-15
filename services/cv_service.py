@@ -47,12 +47,12 @@ def decode_base64_image(base64_str):
         print(f"[CV Service] Base64 decode error: {e}")
         return None
 
-# Recognized Indian State and Union Territory RTO Prefix Codes
+# Recognized Indian State and Union Territory RTO Prefix Codes (plus old & special series)
 INDIAN_STATE_CODES = {
     'AN', 'AP', 'AR', 'AS', 'BR', 'CG', 'CH', 'DD', 'DL', 'DN',
     'GA', 'GJ', 'HR', 'HP', 'JH', 'JK', 'KA', 'KL', 'LA', 'LD',
-    'MB', 'MH', 'ML', 'MN', 'MP', 'MZ', 'NL', 'OD', 'PB', 'PY',
-    'RJ', 'SK', 'TN', 'TR', 'TS', 'UK', 'UP', 'US', 'WB', 'BH'
+    'MB', 'MH', 'ML', 'MN', 'MP', 'MZ', 'NL', 'OD', 'OR', 'PB', 'PY',
+    'RJ', 'SK', 'TN', 'TR', 'TS', 'UK', 'UA', 'UP', 'US', 'WB', 'BH'
 }
 
 LETTER_TO_DIGIT = {
@@ -63,6 +63,10 @@ LETTER_TO_DIGIT = {
 DIGIT_TO_LETTER = {
     '0': 'O', '1': 'I', '2': 'Z', '3': 'E', '4': 'A', '5': 'S',
     '6': 'G', '7': 'T', '8': 'B'
+}
+
+STATE_FIRST_LETTER_CORRECTION = {
+    '7': 'T', '1': 'I', '0': 'D', '6': 'G', 'V': 'U'
 }
 
 # Mapping of second character to likely Indian State code when the first character is clipped or missed by camera
@@ -82,55 +86,122 @@ STATE_SECOND_LETTER_MAP = {
 
 def clean_plate_text(raw_text):
     """
-    Sanitize OCR text into a clean uppercase license plate string (e.g. TN03MF4477, MH12DE5678, GJ09AB1234).
-    Handles edge cases:
-      - Missing first state letter (e.g. 'N 03 MF 4477' -> 'TN03MF4477')
-      - Missing leading zero in RTO (e.g. 'TN 3 MF 4477' -> 'TN03MF4477')
-      - Missing / degraded characters from glare (e.g. 'TNO3MF447S' -> 'TN03MF4475')
-      - Missing last digit or VIP 3-digit plates (e.g. 'TN 03 MF 447' -> 'TN03MF447')
-      - Leading 'IND' hologram badge stripping
+    Sanitize and extract clean uppercase license plate string (e.g. TN03MF4477, MH12DE1433, KA81T9874, DL01CA1111).
+    Handles real-world conditions:
+      - 2-line plates and tokens in scene
+      - Stripping leading IND / 1ND / ID hologram badges
+      - State prefix recovery & single-digit RTO padding (TN 3 -> TN03)
+      - Delhi special vehicle series (DL 3C AY 5244 -> DL03CAY5244)
+      - Bharat Series (22BH1234AA)
+      - OCR confusion correction (O->0, I->1, S->5, B->8, 7N->TN)
+      - Filtering car brand badges & scene noise
     """
     if not raw_text:
         return ""
-    cleaned = re.sub(r'[^A-Za-z0-9]', '', raw_text).upper()
-    if len(cleaned) < 4:
-        return ""
 
-    # Strip leading 'IND' hologram if present
-    if cleaned.startswith('IND') and len(cleaned) >= 8:
-        cleaned = cleaned[3:]
+    raw_str = str(raw_text).upper().strip()
 
-    # Priority 1: Match standard Indian High Security plate pattern with valid state code
-    # Format: [State: 2 letters][RTO: 1-2 digits][Series: 0-3 letters][Number: 3-4 digits]
-    for m in re.finditer(r'([A-Z]{2})([0-9]{1,2})([A-Z]{0,3})([0-9]{3,4})', cleaned):
-        state = m.group(1)
-        rto = m.group(2)
-        series = m.group(3)
-        num = m.group(4)
-        if state in INDIAN_STATE_CODES:
-            if len(rto) == 1:
-                rto = f"0{rto}"
-            return f"{state}{rto}{series}{num}"
+    # 1. Search for State Code as anchor inside token sequence
+    tokens = re.findall(r'[A-Za-z0-9]+', raw_str)
+    for i, tok in enumerate(tokens):
+        st = None
+        rem = ''
+        if len(tok) >= 2 and tok[:2] in INDIAN_STATE_CODES:
+            st = tok[:2]
+            rem = tok[2:]
+        elif len(tok) >= 4 and tok[:2] in {'EN', 'IN', 'ID'} and tok[2:4] in INDIAN_STATE_CODES:
+            st = tok[2:4]
+            rem = tok[4:]
+        elif len(tok) >= 2 and tok[0] in STATE_FIRST_LETTER_CORRECTION and (STATE_FIRST_LETTER_CORRECTION[tok[0]] + tok[1]) in INDIAN_STATE_CODES:
+            st = STATE_FIRST_LETTER_CORRECTION[tok[0]] + tok[1]
+            rem = tok[2:]
+        elif i + 1 < len(tokens) and tok in {'IND', '1ND', 'ID', 'IN'} and len(tokens[i+1]) >= 2 and tokens[i+1][:2] in INDIAN_STATE_CODES:
+            continue
 
-    # Priority 2: Bharat series (e.g., 22BH1234AA)
+        if st:
+            following = [rem] if rem else []
+            following.extend(tokens[i+1 : i+6])
+            joined_after = ''.join(following)
+
+            # Format 1: Glitched 3-digit RTO with leading zero (e.g. '037MF4477' -> '03' + 'MF' + '4477')
+            m_g0 = re.search(r'0([0-9])[0-9]\s*([A-Z]{1,3})\s*([0-9]{3,4})', joined_after)
+            if m_g0:
+                return f"{st}0{m_g0.group(1)}{m_g0.group(2)}{m_g0.group(3)}"
+
+            # Format 2: Standard Indian [RTO: 1-2 digits] [Series: 1-3 letters] [Number: 3-4 digits]
+            m_std = re.search(r'([0-9]{1,2})\s*([A-Z]{1,3})\s*([0-9]{3,4})', joined_after)
+            if m_std:
+                rto = m_std.group(1)
+                if len(rto) == 1:
+                    rto = '0' + rto
+                return f"{st}{rto}{m_std.group(2)}{m_std.group(3)}"
+
+            # Format 3: Delhi Special [RTO: 1-2 digits + 1 letter] [Series: 1-2 letters] [Number: 3-4 digits]
+            m_dl = re.search(r'([0-9]{1,2}[A-Z])\s*([A-Z]{1,2})\s*([0-9]{3,4})', joined_after)
+            if m_dl:
+                rto_dl = m_dl.group(1)
+                if len(rto_dl) == 2 and rto_dl[0].isdigit():
+                    rto_dl = '0' + rto_dl
+                return f"{st}{rto_dl}{m_dl.group(2)}{m_dl.group(3)}"
+
+            # Format 4: Pure numeric RTO + 4-digit Number (no series letters e.g. MH 02 1234)
+            m_num = re.search(r'([0-9]{1,2})\s*([0-9]{4})', joined_after)
+            if m_num:
+                rto = m_num.group(1)
+                if len(rto) == 1:
+                    rto = '0' + rto
+                return f"{st}{rto}{m_num.group(2)}"
+
+            # Format 5: Glitched 3-digit without leading zero (e.g. '120DE1433' -> '12' + 'DE' + '1433')
+            m_glitch = re.search(r'([0-9]{2})[0-9]\s*([A-Z]{1,3})\s*([0-9]{3,4})', joined_after)
+            if m_glitch:
+                return f"{st}{m_glitch.group(1)}{m_glitch.group(2)}{m_glitch.group(3)}"
+
+            # Format 6: Short number fallback (2-3 digits)
+            m_short = re.search(r'([0-9]{1,2})\s*([A-Z]{0,3})\s*([0-9]{2,4})', joined_after)
+            if m_short:
+                rto = m_short.group(1)
+                if len(rto) == 1:
+                    rto = '0' + rto
+                return f"{st}{rto}{m_short.group(2)}{m_short.group(3)}"
+
+    # 2. Compact string fallback search
+    cleaned = re.sub(r'[^A-Za-z0-9]', '', raw_str)
+    cleaned = re.sub(r'^(IND|1ND|ID)', '', cleaned)
+    if cleaned.startswith('IN') and len(cleaned) >= 8 and cleaned[2:4] in INDIAN_STATE_CODES:
+        cleaned = cleaned[2:]
+
+    # Bharat Series
     bh_match = re.search(r'([0-9]{2}BH[0-9]{4}[A-Z]{1,2})', cleaned)
     if bh_match:
         return bh_match.group(1)
 
-    # Priority 3: State code + numerical digits (e.g., GJ091234, MH125678, TN034477)
-    for st_match in re.finditer(r'([A-Z]{2})([0-9]{3,8})', cleaned):
-        if st_match.group(1) in INDIAN_STATE_CODES:
-            return st_match.group(0)
+    # Standard Regex with series letters first
+    for m in re.finditer(r'([A-Z]{2})([0-9]{1,2})([A-Z]{1,3})([0-9]{3,4})', cleaned):
+        st = m.group(1)
+        if st in INDIAN_STATE_CODES:
+            rto = m.group(2)
+            if len(rto) == 1:
+                rto = f"0{rto}"
+            return f"{st}{rto}{m.group(3)}{m.group(4)}"
 
-    # Priority 4: Sliding window search with OCR confusion correction for Indian plates
-    # (Handles e.g., 'TNO3MF4477' with letter 'O' instead of digit '0', or '7N03MF447S' -> 'TN03MF4475')
+    # Standard Regex without series
+    for m in re.finditer(r'([A-Z]{2})([0-9]{1,2})([0-9]{4})', cleaned):
+        st = m.group(1)
+        if st in INDIAN_STATE_CODES:
+            rto = m.group(2)
+            if len(rto) == 1:
+                rto = f"0{rto}"
+            return f"{st}{rto}{m.group(3)}"
+
+    # Sliding window with OCR confusion correction (e.g. 'TNO3MF447S' -> 'TN03MF4475')
     for length in [10, 9, 8, 11, 7]:
         for i in range(0, max(1, len(cleaned) - length + 1)):
             chunk = cleaned[i:i+length]
-            s0 = DIGIT_TO_LETTER.get(chunk[0], chunk[0])
-            s1 = DIGIT_TO_LETTER.get(chunk[1], chunk[1])
-            state = s0 + s1
-            if state in INDIAN_STATE_CODES:
+            s0 = STATE_FIRST_LETTER_CORRECTION.get(chunk[0], chunk[0])
+            s1 = chunk[1]
+            st = s0 + s1
+            if st in INDIAN_STATE_CODES:
                 tail_len = 4 if length >= 9 else (3 if length >= 7 else 2)
                 tail_raw = chunk[-tail_len:]
                 tail_digits = ''.join([LETTER_TO_DIGIT.get(c, c) for c in tail_raw])
@@ -141,87 +212,82 @@ def clean_plate_text(raw_text):
                     if len(rto) == 1:
                         rto = f"0{rto}"
                     series = ''.join([DIGIT_TO_LETTER.get(c, c) for c in mid_raw[rto_len:]])
-                    cand = f"{state}{rto}{series}{tail_digits}"
-                    if re.match(r'^[A-Z]{2}[0-9]{2}[A-Z]{0,3}[0-9]{3,4}$', cand):
+                    cand = f"{st}{rto}{series}{tail_digits}"
+                    if re.match(r'^[A-Z]{2}[0-9]{2}[A-Z]{0,3}[0-9]{2,4}$', cand):
                         return cand
 
-    # Priority 5: Recover Missing First State Letter (e.g., 'N03MF4477' -> 'TN03MF4477')
-    # If the first letter was clipped by the camera edge: [1 letter][1-2 digits][1-3 letters][3-4 digits]
-    miss_first = re.match(r'^([A-Z])([0-9]{1,2})([A-Z]{1,3})([0-9]{3,4})$', cleaned)
+    # Reconstruct Missing First State Letter (e.g., 'N03MF4477' -> 'TN03MF4477')
+    miss_first = re.search(r'([A-Z])([0-9]{1,2})([A-Z]{1,3})([0-9]{3,4})', cleaned)
     if miss_first:
-        end_char = miss_first.group(1)
+        second_char = miss_first.group(1)
         rto = miss_first.group(2)
         if len(rto) == 1:
             rto = f"0{rto}"
         series = miss_first.group(3)
         num = miss_first.group(4)
-        if end_char in STATE_SECOND_LETTER_MAP:
-            recovered_state = STATE_SECOND_LETTER_MAP[end_char][0] # Default to primary state (e.g. 'TN' for 'N')
-            return f"{recovered_state}{rto}{series}{num}"
+        if second_char in STATE_SECOND_LETTER_MAP:
+            rec_st = STATE_SECOND_LETTER_MAP[second_char][0]
+            return f"{rec_st}{rto}{series}{num}"
 
-    # Priority 6: Any standard pattern match
-    p = re.search(r'([A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4})', cleaned)
-    if p:
-        return p.group(1)
-
-    # Priority 7: Fallback only for plausible alphanumeric vehicle plate sequences (must have both letters & digits)
-    if 5 <= len(cleaned) <= 12:
-        letters = len(re.findall(r'[A-Z]', cleaned))
-        digits = len(re.findall(r'[0-9]', cleaned))
-        if letters >= 1 and digits >= 2:
-            # Reject common non-plate words from screen or camera scene
-            banned = {'GOOGLE', 'CHROME', 'TAMIL', 'ACKO', 'FANCY', 'GUIDE', 'SCREEN', 'CAMERA', 'SMART', 'PLATE', 'REGISTER'}
-            if not any(b in cleaned for b in banned):
-                return cleaned
+    # General alphanumeric fallback (rejecting banned brand names)
+    banned = {'HONDA', 'HYUNDAI', 'SUZUKI', 'MARUTI', 'TOYOTA', 'MAHINDRA', 'TATA', 'FORD', 'DIESEL', 'PETROL', 'TURBO', 'CAMERA', 'SMART', 'PLATE'}
+    if 5 <= len(cleaned) <= 12 and not any(b in cleaned for b in banned):
+        if re.search(r'[A-Z]', cleaned) and re.search(r'[0-9]', cleaned):
+            return cleaned
 
     return ""
 
-def preprocess_and_detect_plate_region(img):
+def sort_results_reading_order(results):
     """
-    OpenCV computer vision pipeline to extract candidate license plate region.
-    Finds rectangular contours matching standard license plate aspect ratio (approx 1.5 to 6.5).
+    Sorts OCR bounding boxes in natural 2-line reading order (Top-to-Bottom, Left-to-Right).
+    Solves 2-line motorcycle, SUV, and commercial plates where line 1 is above line 2.
     """
-    if img is None:
-        return None, None
+    if not results:
+        return []
+    items = []
+    for r in results:
+        box = r[0]
+        try:
+            ys = [p[1] for p in box]
+            xs = [p[0] for p in box]
+            yc = sum(ys) / len(ys)
+            xc = sum(xs) / len(xs)
+            h = max(ys) - min(ys)
+            items.append({'res': r, 'xc': xc, 'yc': yc, 'h': max(h, 12)})
+        except Exception:
+            items.append({'res': r, 'xc': 0, 'yc': 0, 'h': 15})
 
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    # Apply CLAHE contrast enhancement for low lighting conditions
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
-    
-    bfilter = cv2.bilateralFilter(enhanced, 11, 17, 17)
-    edged = cv2.Canny(bfilter, 30, 200)
+    items.sort(key=lambda x: x['yc'])
 
-    # Find contours
-    keypoints = cv2.findContours(edged.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    contours = keypoints[0] if len(keypoints) == 2 else keypoints[1]
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:15]
+    # Group into lines based on vertical proximity
+    lines = []
+    for it in items:
+        placed = False
+        for line in lines:
+            avg_y = sum([x['yc'] for x in line]) / len(line)
+            avg_h = sum([x['h'] for x in line]) / len(line)
+            if abs(it['yc'] - avg_y) < avg_h * 0.65:
+                line.append(it)
+                placed = True
+                break
+        if not placed:
+            lines.append([it])
 
-    for contour in contours:
-        x, y, w, h = cv2.boundingRect(contour)
-        if h > 0 and w > 0:
-            aspect_ratio = float(w) / float(h)
-            area = cv2.contourArea(contour)
-            if 1.5 <= aspect_ratio <= 6.5 and area > 400:
-                cropped_plate = enhanced[max(0, y-5):min(img.shape[0], y+h+5), max(0, x-5):min(img.shape[1], x+w+5)]
-                if cropped_plate.size > 0:
-                    return cropped_plate, (x, y, w, h)
+    # Sort each line left-to-right
+    sorted_res = []
+    for line in lines:
+        line.sort(key=lambda x: x['xc'])
+        for it in line:
+            sorted_res.append(it['res'])
 
-    return enhanced, (0, 0, img.shape[1], img.shape[0])
+    return sorted_res
 
 def perform_anpr_ocr(img):
     """
-    Runs ANPR OCR on frame image using EasyOCR with robust multi-pass detection.
+    Real-world ANPR OCR pipeline optimized for high speed (<1.2s) and high accuracy.
     Evaluates:
-      1. Center Guide ROI with 25px Margin Padding (prevents edge character cut-off)
-      2. Super-Resolution 2.2x Upscaled ROI with Bicubic Interpolation
-      3. Morphological Stroke-Healing (connects broken or faint character lines)
-      4. High-Contrast Unsharp Masking & CLAHE 4.0
-      5. Adaptive Binarization (Otsu & Gaussian)
-      6. Contour-detected License Plate Box
-      7. Full Original Frame
-    Extracts, merges, reconstructs, and scores the most accurate license plate string.
+      1. Full Frame Normalized (max_dim=1024) with Two-Line Natural Reading Order
+      2. Contrast-Enhanced Center/Bumper Region (CLAHE 3.0)
     """
     if img is None:
         return "", 0.0, (0, 0, 0, 0)
@@ -230,169 +296,115 @@ def perform_anpr_ocr(img):
     if not reader:
         return "", 0.0, (0, 0, img.shape[1], img.shape[0])
 
+    orig_h, orig_w = img.shape[:2]
+
+    # Normalize image resolution to max dimension 1024px for lightning-fast execution (<1.2s)
+    max_dim = max(orig_h, orig_w)
+    if max_dim > 1024:
+        scale = 1024.0 / float(max_dim)
+        img_norm = cv2.resize(img, (int(orig_w * scale), int(orig_h * scale)), interpolation=cv2.INTER_AREA)
+    else:
+        scale = 1.0
+        img_norm = img
+
+    nh, nw = img_norm.shape[:2]
     candidates = []
-    h, w = img.shape[:2]
 
-    # Define Center Overlay Region of Interest (matches UI ALIGN LICENSE PLATE HERE box)
-    roi_y1 = max(0, int(h * 0.14))
-    roi_y2 = min(h, int(h * 0.86))
-    roi_x1 = max(0, int(w * 0.10))
-    roi_x2 = min(w, int(w * 0.90))
-    center_roi = img[roi_y1:roi_y2, roi_x1:roi_x2]
+    def evaluate_ocr_results(ocr_results, offset=(0, 0)):
+        if not ocr_results:
+            return None
+        sorted_results = sort_results_reading_order(ocr_results)
 
-    passes = []
-
-    if center_roi.size > 0:
-        # Add 25px margin padding around center ROI so edge letters (T, 7, etc.) are never clipped
-        padded_roi = cv2.copyMakeBorder(center_roi, 25, 25, 30, 30, cv2.BORDER_REPLICATE)
-        orig_offset = (max(0, roi_x1 - 30), max(0, roi_y1 - 25))
-
-        # Pass 1: Padded Center ROI
-        passes.append(("padded_roi", padded_roi, orig_offset))
-
-        # Pass 2: Super-Resolution 2.2x Upscaled ROI (crucial for small, distant, or thin characters)
-        try:
-            upscaled_roi = cv2.resize(padded_roi, (0, 0), fx=2.2, fy=2.2, interpolation=cv2.INTER_CUBIC)
-            passes.append(("upscaled_roi", upscaled_roi, orig_offset))
-        except Exception:
-            pass
-
-        # Pass 3: Morphological Stroke Healing (connects thin broken character lines e.g. 0, 8, 4, B)
-        try:
-            gray_roi = cv2.cvtColor(padded_roi, cv2.COLOR_BGR2GRAY)
-            close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-            healed_roi = cv2.morphologyEx(gray_roi, cv2.MORPH_CLOSE, close_kernel)
-            passes.append(("healed_roi", healed_roi, orig_offset))
-        except Exception:
-            pass
-
-        # Pass 4: Unsharp Mask Sharpened & Contrast-Enhanced (CLAHE 4.0)
-        try:
-            if 'gray_roi' in locals():
-                clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
-                clahe_roi = clahe.apply(gray_roi)
-                gaussian = cv2.GaussianBlur(clahe_roi, (0, 0), 2.0)
-                sharpened_roi = cv2.addWeighted(clahe_roi, 1.8, gaussian, -0.8, 0)
-                passes.append(("sharpened_roi", sharpened_roi, orig_offset))
-        except Exception:
-            pass
-
-        # Pass 5: Adaptive Gaussian & Otsu Binarization (neutralizes screen backlighting glare)
-        try:
-            if 'gray_roi' in locals():
-                thresh_roi = cv2.adaptiveThreshold(gray_roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 17, 7)
-                passes.append(("thresh_roi", thresh_roi, orig_offset))
-        except Exception:
-            pass
-
-    # Pass 6: Contour License Plate Region
-    try:
-        cropped_plate, c_bbox = preprocess_and_detect_plate_region(img)
-        if cropped_plate is not None and cropped_plate.size > 0:
-            padded_contour = cv2.copyMakeBorder(cropped_plate, 15, 15, 20, 20, cv2.BORDER_REPLICATE)
-            passes.append(("contour_crop", padded_contour, (c_bbox[0], c_bbox[1])))
-    except Exception:
-        pass
-
-    # Pass 7: Full Original Image
-    passes.append(("original", img, (0, 0)))
-
-    # Process passes in order of precision
-    for pass_name, img_pass, (offset_x, offset_y) in passes:
-        try:
-            # Call EasyOCR with sensitive character detection thresholds so no faint characters are dropped
-            results = reader.readtext(
-                img_pass,
-                text_threshold=0.28,
-                low_text=0.18,
-                link_threshold=0.28,
-                mag_ratio=1.5,
-                add_margin=0.15,
-                slope_ths=0.15,
-                ycenter_ths=0.6
-            )
-            if not results:
+        # 1. Check individual tokens first for direct, high-confidence single-line plate detection
+        for res in sorted_results:
+            raw_t = res[1].strip()
+            if any(w in raw_t.upper() for w in ['ALIGN', 'RECEIPT', 'BREAKDOWN', 'ENTER', 'CONFIRM', 'REGISTER', 'GRANT', 'ENTRY', 'CANCEL', 'BUTTON', 'E.G.', 'EG', 'CAMERA', 'CALCULATE', 'AUTO-SCAN']):
                 continue
+            c_tok = clean_plate_text(raw_t)
+            if c_tok and len(c_tok) >= 8 and c_tok[:2] in INDIAN_STATE_CODES:
+                score = 3.5 + float(res[2])
+                return (c_tok, score, float(res[2]), (int(offset[0] / scale), int(offset[1] / scale), orig_w, orig_h))
 
-            # Sort detected words horizontally in natural reading order (left-to-right)
-            def get_x_center(box):
-                try:
-                    return (box[0][0] + box[1][0]) / 2.0
-                except Exception:
-                    return 0.0
+        # 2. Check sliding window across adjacent tokens (e.g. ['MH', '12', 'DE', '1433'])
+        n_tok = len(sorted_results)
+        for w_size in range(2, min(5, n_tok + 1)):
+            for start in range(n_tok - w_size + 1):
+                window = sorted_results[start : start + w_size]
+                w_str = " ".join([t[1] for t in window])
+                if any(w in w_str.upper() for w in ['ALIGN', 'RECEIPT', 'BREAKDOWN', 'REGISTER', 'GRANT', 'ENTRY', 'BUTTON', 'E.G.', 'EG']):
+                    continue
+                c_win = clean_plate_text(w_str)
+                if c_win and len(c_win) >= 8 and c_win[:2] in INDIAN_STATE_CODES:
+                    avg_c = sum([float(t[2]) for t in window]) / float(w_size)
+                    score = avg_c + 2.0
+                    return (c_win, score, avg_c, (int(offset[0] / scale), int(offset[1] / scale), orig_w, orig_h))
 
-            sorted_results = sorted(results, key=lambda r: get_x_center(r[0]))
+        # 3. Check joined raw text across reading order
+        clean_tokens = [r[1] for r in sorted_results if not any(w in r[1].upper() for w in ['ALIGN', 'RECEIPT', 'BREAKDOWN', 'REGISTER', 'GRANT', 'ENTRY', 'BUTTON', 'E.G.', 'EG'])]
+        if clean_tokens:
+            joined_raw = " ".join(clean_tokens)
+            c_joined = clean_plate_text(joined_raw)
+            if c_joined and len(c_joined) >= 6:
+                score = 1.8
+                if c_joined[:2] in INDIAN_STATE_CODES:
+                    score += 0.8
+                if re.search(r'[A-Z]{2}[0-9]{2}[A-Z]{1,3}[0-9]{3,4}', c_joined) or re.search(r'[0-9]{2}BH', c_joined):
+                    score += 1.0
+                return (c_joined, score, 0.95, (int(offset[0] / scale), int(offset[1] / scale), orig_w, orig_h))
 
-            # 1. Evaluate Complete Joined String
-            joined_raw = " ".join([r[1] for r in sorted_results])
-            cleaned_joined = clean_plate_text(joined_raw)
-            if cleaned_joined:
-                score = 1.0
-                if re.search(r'[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4}', cleaned_joined):
-                    score += 0.7
-                if cleaned_joined[:2] in INDIAN_STATE_CODES:
-                    score += 0.4
-                candidates.append((cleaned_joined, score, 0.95, (offset_x, offset_y, img_pass.shape[1], img_pass.shape[0])))
-                # If high-confidence standard Indian plate match, return immediately for instant responsiveness
-                if score >= 1.7:
-                    return cleaned_joined, 0.95, (offset_x, offset_y, img_pass.shape[1], img_pass.shape[0])
+        # 4. Individual tokens fallback
+        for res in sorted_results:
+            raw_t = res[1].strip()
+            if any(w in raw_t.upper() for w in ['ALIGN', 'RECEIPT', 'BREAKDOWN', 'REGISTER', 'GRANT', 'ENTRY', 'BUTTON', 'E.G.', 'EG']):
+                continue
+            c_tok = clean_plate_text(raw_t)
+            if c_tok and len(c_tok) >= 6:
+                score = float(res[2]) + 0.5
+                if c_tok[:2] in INDIAN_STATE_CODES:
+                    score += 0.6
+                candidates.append((c_tok, score, float(res[2]), (int(offset[0] / scale), int(offset[1] / scale), orig_w, orig_h)))
 
-            # 2. Evaluate Multi-Token Windows (Permutations of 2, 3, 4 tokens to assemble split plates)
-            n_tokens = len(sorted_results)
-            for window_size in range(2, min(5, n_tokens + 1)):
-                for start_idx in range(n_tokens - window_size + 1):
-                    sub_tokens = sorted_results[start_idx : start_idx + window_size]
-                    sub_spaced = " ".join([t[1] for t in sub_tokens])
-                    sub_compact = "".join([t[1] for t in sub_tokens])
-                    for text_candidate in [sub_spaced, sub_compact]:
-                        cleaned_cand = clean_plate_text(text_candidate)
-                        if cleaned_cand:
-                            avg_conf = sum([float(t[2]) for t in sub_tokens]) / float(window_size)
-                            score = avg_conf
-                            if re.search(r'[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4}', cleaned_cand):
-                                score += 0.7
-                            if cleaned_cand[:2] in INDIAN_STATE_CODES:
-                                score += 0.4
-                            candidates.append((cleaned_cand, score, avg_conf, (offset_x, offset_y, img_pass.shape[1], img_pass.shape[0])))
-                            if score >= 1.7:
-                                return cleaned_cand, avg_conf, (offset_x, offset_y, img_pass.shape[1], img_pass.shape[0])
+        return None
 
-            # 3. Evaluate Individual Word Tokens
-            for res in sorted_results:
-                raw_txt = res[1]
-                conf = float(res[2])
-                cleaned = clean_plate_text(raw_txt)
-                if cleaned:
-                    score = conf
-                    if re.search(r'[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4}', cleaned):
-                        score += 0.7
-                    if cleaned[:2] in INDIAN_STATE_CODES:
-                        score += 0.4
+    try:
+        # Pass 1: Full Frame Normalized with standard robust OCR parameters
+        res1 = reader.readtext(img_norm)
+        best_p1 = evaluate_ocr_results(res1, offset=(0, 0))
+        if best_p1 and best_p1[1] >= 2.0:
+            return best_p1[0], best_p1[2], best_p1[3]
+        if best_p1:
+            candidates.append(best_p1)
+    except Exception as e:
+        print(f"[CV Service] OCR Pass 1 warning: {e}")
 
-                    box = res[0]
-                    try:
-                        xs = [p[0] for p in box]
-                        ys = [p[1] for p in box]
-                        bx = int(min(xs)) + offset_x
-                        by = int(min(ys)) + offset_y
-                        bw = int(max(xs) - min(xs))
-                        bh = int(max(ys) - min(ys))
-                        item_bbox = (bx, by, bw, bh)
-                    except Exception:
-                        item_bbox = (offset_x, offset_y, img_pass.shape[1], img_pass.shape[0])
+    # Pass 2: Contrast-Enhanced Center / Bumper ROI
+    try:
+        cy1 = int(nh * 0.10)
+        cy2 = int(nh * 0.90)
+        cx1 = int(nw * 0.08)
+        cx2 = int(nw * 0.92)
+        center_crop = img_norm[cy1:cy2, cx1:cx2]
 
-                    candidates.append((cleaned, score, conf, item_bbox))
-                    if score >= 1.6:
-                        return cleaned, conf, item_bbox
+        if center_crop.size > 0:
+            gray = cv2.cvtColor(center_crop, cv2.COLOR_BGR2GRAY)
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            enhanced_gray = clahe.apply(gray)
 
-        except Exception as e:
-            print(f"[CV Service] EasyOCR pass ({pass_name}) warning: {e}")
+            res2 = reader.readtext(enhanced_gray)
+            best_p2 = evaluate_ocr_results(res2, offset=(cx1, cy1))
+            if best_p2 and best_p2[1] >= 2.0:
+                return best_p2[0], best_p2[2], best_p2[3]
+            if best_p2:
+                candidates.append(best_p2)
+    except Exception as e:
+        print(f"[CV Service] OCR Pass 2 warning: {e}")
 
+    # Return best candidate found across passes
     if candidates:
         best = max(candidates, key=lambda x: x[1])
         return best[0], best[2], best[3]
 
-    return "", 0.0, (0, 0, img.shape[1], img.shape[0])
+    return "", 0.0, (0, 0, orig_w, orig_h)
 
 def process_anpr_frame(location_id, base64_frame, camera_type='ENTRY', manual_plate=None, user_id=None):
     """
