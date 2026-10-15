@@ -8,8 +8,24 @@ function startCameraStream(videoElementId = 'webcam-video', onReady) {
   const video = document.getElementById(videoElementId);
   if (!video) return;
 
+  const hdConstraints = {
+    video: {
+      width: { ideal: 1920, min: 1280 },
+      height: { ideal: 1080, min: 720 },
+      facingMode: 'environment'
+    },
+    audio: false
+  };
+
+  const fallbackConstraints = {
+    video: { facingMode: 'environment' },
+    audio: false
+  };
+
   if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+    navigator.mediaDevices.getUserMedia(hdConstraints)
+      .catch(() => navigator.mediaDevices.getUserMedia(fallbackConstraints))
+      .catch(() => navigator.mediaDevices.getUserMedia({ video: true, audio: false }))
       .then((stream) => {
         mediaStream = stream;
         video.srcObject = stream;
@@ -43,7 +59,7 @@ function captureFrameBase64(videoElementId = 'webcam-video') {
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  return canvas.toDataURL('image/jpeg', 0.85);
+  return canvas.toDataURL('image/jpeg', 0.95);
 }
 
 function scanFrameForANPR(locationId, cameraType = 'ENTRY', callback, manualPlate = '') {
@@ -60,7 +76,8 @@ function scanFrameForANPR(locationId, cameraType = 'ENTRY', callback, manualPlat
       location_id: locationId,
       camera_type: cameraType,
       frame: base64Frame,
-      manual_plate: manualPlate
+      manual_plate: manualPlate,
+      user_id: window.currentUserId || null
     })
   })
   .then(res => res.json())
@@ -78,6 +95,7 @@ function scanUploadedPlateImage(file, locationId, cameraType = 'ENTRY', manualPl
   formData.append('location_id', locationId);
   formData.append('camera_type', cameraType);
   if (manualPlate) formData.append('manual_plate', manualPlate);
+  if (window.currentUserId) formData.append('user_id', window.currentUserId);
 
   fetch('/api/cv/upload-scan', {
     method: 'POST',
@@ -104,7 +122,8 @@ function scanManualPlateInput(plateNumber, locationId, cameraType = 'ENTRY', cal
     body: JSON.stringify({
       location_id: locationId,
       plate_number: plateNumber,
-      camera_type: cameraType
+      camera_type: cameraType,
+      user_id: window.currentUserId || null
     })
   })
   .then(res => res.json())

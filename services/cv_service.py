@@ -17,13 +17,16 @@ _easyocr_reader = None
 
 def get_ocr_reader():
     global _easyocr_reader
-    if _easyocr_reader is None:
+    if _easyocr_reader is None or _easyocr_reader is False:
         try:
             import easyocr
-            # Load English OCR reader on CPU
-            _easyocr_reader = easyocr.Reader(['en'], gpu=False)
+            # Load English OCR reader on CPU with verbose=False to prevent Windows charmap stdout errors
+            _easyocr_reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+            print("[CV Service] EasyOCR Reader initialized successfully.")
         except Exception as e:
+            import traceback
             print(f"[CV Service] EasyOCR init warning: {e}")
+            traceback.print_exc()
             _easyocr_reader = False
     return _easyocr_reader
 
@@ -44,34 +47,134 @@ def decode_base64_image(base64_str):
         print(f"[CV Service] Base64 decode error: {e}")
         return None
 
+# Recognized Indian State and Union Territory RTO Prefix Codes
+INDIAN_STATE_CODES = {
+    'AN', 'AP', 'AR', 'AS', 'BR', 'CG', 'CH', 'DD', 'DL', 'DN',
+    'GA', 'GJ', 'HR', 'HP', 'JH', 'JK', 'KA', 'KL', 'LA', 'LD',
+    'MB', 'MH', 'ML', 'MN', 'MP', 'MZ', 'NL', 'OD', 'PB', 'PY',
+    'RJ', 'SK', 'TN', 'TR', 'TS', 'UK', 'UP', 'US', 'WB', 'BH'
+}
+
+LETTER_TO_DIGIT = {
+    'O': '0', 'Q': '0', 'D': '0', 'I': '1', 'L': '1', 'Z': '2',
+    'E': '3', 'A': '4', 'S': '5', 'G': '6', 'T': '7', 'B': '8'
+}
+
+DIGIT_TO_LETTER = {
+    '0': 'O', '1': 'I', '2': 'Z', '3': 'E', '4': 'A', '5': 'S',
+    '6': 'G', '7': 'T', '8': 'B'
+}
+
+# Mapping of second character to likely Indian State code when the first character is clipped or missed by camera
+STATE_SECOND_LETTER_MAP = {
+    'N': ['TN', 'DN', 'AN', 'MN'],
+    'H': ['MH', 'CH', 'JH'],
+    'J': ['GJ', 'RJ'],
+    'L': ['DL', 'KL', 'ML', 'NL'],
+    'A': ['KA', 'GA', 'LA'],
+    'P': ['UP', 'MP', 'AP', 'HP'],
+    'B': ['PB', 'WB'],
+    'R': ['HR', 'AR', 'TR', 'BR'],
+    'K': ['JK', 'SK', 'UK'],
+    'D': ['DD', 'OD'],
+    'S': ['TS', 'AS']
+}
+
 def clean_plate_text(raw_text):
     """
-    Sanitize OCR text into clean uppercase license plate string (e.g. MH12AB1234, GJ09AB1234, DL01CA1111)
-    Removes spaces, symbols, hyphens, and extracts standard plate patterns.
+    Sanitize OCR text into a clean uppercase license plate string (e.g. TN03MF4477, MH12DE5678, GJ09AB1234).
+    Handles edge cases:
+      - Missing first state letter (e.g. 'N 03 MF 4477' -> 'TN03MF4477')
+      - Missing leading zero in RTO (e.g. 'TN 3 MF 4477' -> 'TN03MF4477')
+      - Missing / degraded characters from glare (e.g. 'TNO3MF447S' -> 'TN03MF4475')
+      - Missing last digit or VIP 3-digit plates (e.g. 'TN 03 MF 447' -> 'TN03MF447')
+      - Leading 'IND' hologram badge stripping
     """
     if not raw_text:
         return ""
-    # Strip spaces, hyphens, non-alphanumeric and convert to uppercase
     cleaned = re.sub(r'[^A-Za-z0-9]', '', raw_text).upper()
-    if not cleaned:
+    if len(cleaned) < 4:
         return ""
 
-    # Priority 1: Match standard Indian plate regex (e.g., GJ09AB1234, MH12DE5678, DL01CA1111, KA05XY9999)
-    plate_match = re.search(r'([A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4})', cleaned)
-    if plate_match:
-        return plate_match.group(1)
+    # Strip leading 'IND' hologram if present
+    if cleaned.startswith('IND') and len(cleaned) >= 8:
+        cleaned = cleaned[3:]
 
-    # Priority 2: Match state code + digits format (e.g. GJ091234, MH125678)
-    state_match = re.search(r'([A-Z]{2}[0-9]{5,8})', cleaned)
-    if state_match:
-        return state_match.group(1)
+    # Priority 1: Match standard Indian High Security plate pattern with valid state code
+    # Format: [State: 2 letters][RTO: 1-2 digits][Series: 0-3 letters][Number: 3-4 digits]
+    for m in re.finditer(r'([A-Z]{2})([0-9]{1,2})([A-Z]{0,3})([0-9]{3,4})', cleaned):
+        state = m.group(1)
+        rto = m.group(2)
+        series = m.group(3)
+        num = m.group(4)
+        if state in INDIAN_STATE_CODES:
+            if len(rto) == 1:
+                rto = f"0{rto}"
+            return f"{state}{rto}{series}{num}"
 
-    # Priority 3: General 4 to 12 alphanumeric sequence
-    gen_match = re.search(r'[A-Z0-9]{4,12}', cleaned)
-    if gen_match:
-        return gen_match.group(0)
+    # Priority 2: Bharat series (e.g., 22BH1234AA)
+    bh_match = re.search(r'([0-9]{2}BH[0-9]{4}[A-Z]{1,2})', cleaned)
+    if bh_match:
+        return bh_match.group(1)
 
-    return cleaned
+    # Priority 3: State code + numerical digits (e.g., GJ091234, MH125678, TN034477)
+    for st_match in re.finditer(r'([A-Z]{2})([0-9]{3,8})', cleaned):
+        if st_match.group(1) in INDIAN_STATE_CODES:
+            return st_match.group(0)
+
+    # Priority 4: Sliding window search with OCR confusion correction for Indian plates
+    # (Handles e.g., 'TNO3MF4477' with letter 'O' instead of digit '0', or '7N03MF447S' -> 'TN03MF4475')
+    for length in [10, 9, 8, 11, 7]:
+        for i in range(0, max(1, len(cleaned) - length + 1)):
+            chunk = cleaned[i:i+length]
+            s0 = DIGIT_TO_LETTER.get(chunk[0], chunk[0])
+            s1 = DIGIT_TO_LETTER.get(chunk[1], chunk[1])
+            state = s0 + s1
+            if state in INDIAN_STATE_CODES:
+                tail_len = 4 if length >= 9 else (3 if length >= 7 else 2)
+                tail_raw = chunk[-tail_len:]
+                tail_digits = ''.join([LETTER_TO_DIGIT.get(c, c) for c in tail_raw])
+                mid_raw = chunk[2:-tail_len]
+                if mid_raw:
+                    rto_len = 2 if len(mid_raw) >= 3 else (1 if len(mid_raw) == 1 else (2 if mid_raw[:2].isdigit() else 1))
+                    rto = ''.join([LETTER_TO_DIGIT.get(c, c) for c in mid_raw[:rto_len]])
+                    if len(rto) == 1:
+                        rto = f"0{rto}"
+                    series = ''.join([DIGIT_TO_LETTER.get(c, c) for c in mid_raw[rto_len:]])
+                    cand = f"{state}{rto}{series}{tail_digits}"
+                    if re.match(r'^[A-Z]{2}[0-9]{2}[A-Z]{0,3}[0-9]{3,4}$', cand):
+                        return cand
+
+    # Priority 5: Recover Missing First State Letter (e.g., 'N03MF4477' -> 'TN03MF4477')
+    # If the first letter was clipped by the camera edge: [1 letter][1-2 digits][1-3 letters][3-4 digits]
+    miss_first = re.match(r'^([A-Z])([0-9]{1,2})([A-Z]{1,3})([0-9]{3,4})$', cleaned)
+    if miss_first:
+        end_char = miss_first.group(1)
+        rto = miss_first.group(2)
+        if len(rto) == 1:
+            rto = f"0{rto}"
+        series = miss_first.group(3)
+        num = miss_first.group(4)
+        if end_char in STATE_SECOND_LETTER_MAP:
+            recovered_state = STATE_SECOND_LETTER_MAP[end_char][0] # Default to primary state (e.g. 'TN' for 'N')
+            return f"{recovered_state}{rto}{series}{num}"
+
+    # Priority 6: Any standard pattern match
+    p = re.search(r'([A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4})', cleaned)
+    if p:
+        return p.group(1)
+
+    # Priority 7: Fallback only for plausible alphanumeric vehicle plate sequences (must have both letters & digits)
+    if 5 <= len(cleaned) <= 12:
+        letters = len(re.findall(r'[A-Z]', cleaned))
+        digits = len(re.findall(r'[0-9]', cleaned))
+        if letters >= 1 and digits >= 2:
+            # Reject common non-plate words from screen or camera scene
+            banned = {'GOOGLE', 'CHROME', 'TAMIL', 'ACKO', 'FANCY', 'GUIDE', 'SCREEN', 'CAMERA', 'SMART', 'PLATE', 'REGISTER'}
+            if not any(b in cleaned for b in banned):
+                return cleaned
+
+    return ""
 
 def preprocess_and_detect_plate_region(img):
     """
@@ -110,8 +213,15 @@ def preprocess_and_detect_plate_region(img):
 def perform_anpr_ocr(img):
     """
     Runs ANPR OCR on frame image using EasyOCR with robust multi-pass detection.
-    Evaluates original image, 2x upscaled image, CLAHE enhanced image, and binarized threshold image.
-    Extracts the highest confidence real license plate text.
+    Evaluates:
+      1. Center Guide ROI with 25px Margin Padding (prevents edge character cut-off)
+      2. Super-Resolution 2.2x Upscaled ROI with Bicubic Interpolation
+      3. Morphological Stroke-Healing (connects broken or faint character lines)
+      4. High-Contrast Unsharp Masking & CLAHE 4.0
+      5. Adaptive Binarization (Otsu & Gaussian)
+      6. Contour-detected License Plate Box
+      7. Full Original Frame
+    Extracts, merges, reconstructs, and scores the most accurate license plate string.
     """
     if img is None:
         return "", 0.0, (0, 0, 0, 0)
@@ -121,71 +231,170 @@ def perform_anpr_ocr(img):
         return "", 0.0, (0, 0, img.shape[1], img.shape[0])
 
     candidates = []
+    h, w = img.shape[:2]
 
-    # Prepare Image Passes
-    passes = [("original", img)]
+    # Define Center Overlay Region of Interest (matches UI ALIGN LICENSE PLATE HERE box)
+    roi_y1 = max(0, int(h * 0.14))
+    roi_y2 = min(h, int(h * 0.86))
+    roi_x1 = max(0, int(w * 0.10))
+    roi_x2 = min(w, int(w * 0.90))
+    center_roi = img[roi_y1:roi_y2, roi_x1:roi_x2]
 
-    # Pass 2: Upscaled Image (2x zoom for far away or small license plates)
-    try:
-        h, w = img.shape[:2]
-        if w < 1200:
-            upscaled = cv2.resize(img, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
-            passes.append(("upscaled", upscaled))
-    except Exception:
-        pass
+    passes = []
 
-    # Pass 3: CLAHE Enhanced Grayscale Image
-    try:
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-        enhanced = clahe.apply(gray)
-        passes.append(("enhanced", enhanced))
-    except Exception:
-        pass
+    if center_roi.size > 0:
+        # Add 25px margin padding around center ROI so edge letters (T, 7, etc.) are never clipped
+        padded_roi = cv2.copyMakeBorder(center_roi, 25, 25, 30, 30, cv2.BORDER_REPLICATE)
+        orig_offset = (max(0, roi_x1 - 30), max(0, roi_y1 - 25))
 
-    # Pass 4: Cropped License Plate Contour Box (if detected)
-    cropped_plate, bbox = preprocess_and_detect_plate_region(img)
-    if cropped_plate is not None and cropped_plate.size > 0:
-        passes.insert(0, ("cropped", cropped_plate))
-    else:
-        bbox = (0, 0, img.shape[1], img.shape[0])
+        # Pass 1: Padded Center ROI
+        passes.append(("padded_roi", padded_roi, orig_offset))
 
-    # Pass 5: Otsu Binarized Threshold Image
-    try:
-        if 'gray' in locals():
-            _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            passes.append(("thresh", thresh))
-    except Exception:
-        pass
-
-    # Execute OCR across passes
-    for pass_name, img_pass in passes:
+        # Pass 2: Super-Resolution 2.2x Upscaled ROI (crucial for small, distant, or thin characters)
         try:
-            results = reader.readtext(img_pass)
-            if results:
-                for res in results:
-                    raw_txt = res[1]
-                    conf = float(res[2])
-                    cleaned = clean_plate_text(raw_txt)
-                    if len(cleaned) >= 4:
-                        # Give higher weight if matching standard plate pattern
-                        score = conf
-                        if re.search(r'[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}', cleaned):
-                            score += 0.3
-                        elif re.search(r'[A-Z]{2}[0-9]{5,8}', cleaned):
-                            score += 0.2
-                        candidates.append((cleaned, score, conf, bbox))
+            upscaled_roi = cv2.resize(padded_roi, (0, 0), fx=2.2, fy=2.2, interpolation=cv2.INTER_CUBIC)
+            passes.append(("upscaled_roi", upscaled_roi, orig_offset))
+        except Exception:
+            pass
+
+        # Pass 3: Morphological Stroke Healing (connects thin broken character lines e.g. 0, 8, 4, B)
+        try:
+            gray_roi = cv2.cvtColor(padded_roi, cv2.COLOR_BGR2GRAY)
+            close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+            healed_roi = cv2.morphologyEx(gray_roi, cv2.MORPH_CLOSE, close_kernel)
+            passes.append(("healed_roi", healed_roi, orig_offset))
+        except Exception:
+            pass
+
+        # Pass 4: Unsharp Mask Sharpened & Contrast-Enhanced (CLAHE 4.0)
+        try:
+            if 'gray_roi' in locals():
+                clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
+                clahe_roi = clahe.apply(gray_roi)
+                gaussian = cv2.GaussianBlur(clahe_roi, (0, 0), 2.0)
+                sharpened_roi = cv2.addWeighted(clahe_roi, 1.8, gaussian, -0.8, 0)
+                passes.append(("sharpened_roi", sharpened_roi, orig_offset))
+        except Exception:
+            pass
+
+        # Pass 5: Adaptive Gaussian & Otsu Binarization (neutralizes screen backlighting glare)
+        try:
+            if 'gray_roi' in locals():
+                thresh_roi = cv2.adaptiveThreshold(gray_roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 17, 7)
+                passes.append(("thresh_roi", thresh_roi, orig_offset))
+        except Exception:
+            pass
+
+    # Pass 6: Contour License Plate Region
+    try:
+        cropped_plate, c_bbox = preprocess_and_detect_plate_region(img)
+        if cropped_plate is not None and cropped_plate.size > 0:
+            padded_contour = cv2.copyMakeBorder(cropped_plate, 15, 15, 20, 20, cv2.BORDER_REPLICATE)
+            passes.append(("contour_crop", padded_contour, (c_bbox[0], c_bbox[1])))
+    except Exception:
+        pass
+
+    # Pass 7: Full Original Image
+    passes.append(("original", img, (0, 0)))
+
+    # Process passes in order of precision
+    for pass_name, img_pass, (offset_x, offset_y) in passes:
+        try:
+            # Call EasyOCR with sensitive character detection thresholds so no faint characters are dropped
+            results = reader.readtext(
+                img_pass,
+                text_threshold=0.28,
+                low_text=0.18,
+                link_threshold=0.28,
+                mag_ratio=1.5,
+                add_margin=0.15,
+                slope_ths=0.15,
+                ycenter_ths=0.6
+            )
+            if not results:
+                continue
+
+            # Sort detected words horizontally in natural reading order (left-to-right)
+            def get_x_center(box):
+                try:
+                    return (box[0][0] + box[1][0]) / 2.0
+                except Exception:
+                    return 0.0
+
+            sorted_results = sorted(results, key=lambda r: get_x_center(r[0]))
+
+            # 1. Evaluate Complete Joined String
+            joined_raw = " ".join([r[1] for r in sorted_results])
+            cleaned_joined = clean_plate_text(joined_raw)
+            if cleaned_joined:
+                score = 1.0
+                if re.search(r'[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4}', cleaned_joined):
+                    score += 0.7
+                if cleaned_joined[:2] in INDIAN_STATE_CODES:
+                    score += 0.4
+                candidates.append((cleaned_joined, score, 0.95, (offset_x, offset_y, img_pass.shape[1], img_pass.shape[0])))
+                # If high-confidence standard Indian plate match, return immediately for instant responsiveness
+                if score >= 1.7:
+                    return cleaned_joined, 0.95, (offset_x, offset_y, img_pass.shape[1], img_pass.shape[0])
+
+            # 2. Evaluate Multi-Token Windows (Permutations of 2, 3, 4 tokens to assemble split plates)
+            n_tokens = len(sorted_results)
+            for window_size in range(2, min(5, n_tokens + 1)):
+                for start_idx in range(n_tokens - window_size + 1):
+                    sub_tokens = sorted_results[start_idx : start_idx + window_size]
+                    sub_spaced = " ".join([t[1] for t in sub_tokens])
+                    sub_compact = "".join([t[1] for t in sub_tokens])
+                    for text_candidate in [sub_spaced, sub_compact]:
+                        cleaned_cand = clean_plate_text(text_candidate)
+                        if cleaned_cand:
+                            avg_conf = sum([float(t[2]) for t in sub_tokens]) / float(window_size)
+                            score = avg_conf
+                            if re.search(r'[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4}', cleaned_cand):
+                                score += 0.7
+                            if cleaned_cand[:2] in INDIAN_STATE_CODES:
+                                score += 0.4
+                            candidates.append((cleaned_cand, score, avg_conf, (offset_x, offset_y, img_pass.shape[1], img_pass.shape[0])))
+                            if score >= 1.7:
+                                return cleaned_cand, avg_conf, (offset_x, offset_y, img_pass.shape[1], img_pass.shape[0])
+
+            # 3. Evaluate Individual Word Tokens
+            for res in sorted_results:
+                raw_txt = res[1]
+                conf = float(res[2])
+                cleaned = clean_plate_text(raw_txt)
+                if cleaned:
+                    score = conf
+                    if re.search(r'[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4}', cleaned):
+                        score += 0.7
+                    if cleaned[:2] in INDIAN_STATE_CODES:
+                        score += 0.4
+
+                    box = res[0]
+                    try:
+                        xs = [p[0] for p in box]
+                        ys = [p[1] for p in box]
+                        bx = int(min(xs)) + offset_x
+                        by = int(min(ys)) + offset_y
+                        bw = int(max(xs) - min(xs))
+                        bh = int(max(ys) - min(ys))
+                        item_bbox = (bx, by, bw, bh)
+                    except Exception:
+                        item_bbox = (offset_x, offset_y, img_pass.shape[1], img_pass.shape[0])
+
+                    candidates.append((cleaned, score, conf, item_bbox))
+                    if score >= 1.6:
+                        return cleaned, conf, item_bbox
+
         except Exception as e:
-            print(f"[CV Service] EasyOCR pass ({pass_name}) error: {e}")
+            print(f"[CV Service] EasyOCR pass ({pass_name}) warning: {e}")
 
     if candidates:
-        # Sort by boosted confidence score
         best = max(candidates, key=lambda x: x[1])
         return best[0], best[2], best[3]
 
-    return "", 0.0, bbox
+    return "", 0.0, (0, 0, img.shape[1], img.shape[0])
 
-def process_anpr_frame(location_id, base64_frame, camera_type='ENTRY', manual_plate=None):
+def process_anpr_frame(location_id, base64_frame, camera_type='ENTRY', manual_plate=None, user_id=None):
     """
     Main ANPR API processing pipeline.
     Decodes frame, performs ANPR OCR, checks database, registers vehicle, updates booking/slot, logs event.
@@ -213,46 +422,55 @@ def process_anpr_frame(location_id, base64_frame, camera_type='ENTRY', manual_pl
             'bbox': {'x': 0, 'y': 0, 'w': 0, 'h': 0}
         }
 
-    success, message, result = process_anpr_plate_logic(location_id, plate_number, confidence, camera_type)
+    success, message, result = process_anpr_plate_logic(location_id, plate_number, confidence, camera_type, user_id=user_id)
     if result:
         result['bbox'] = {'x': bbox[0], 'y': bbox[1], 'w': bbox[2], 'h': bbox[3]}
     return success, message, result
 
-def get_or_create_walkin_user_and_vehicle(plate_number):
+def get_or_create_walkin_user_and_vehicle(plate_number, user_id=None):
     """
     Ensures a valid User and Vehicle exist and are registered in the database for manual or ANPR entries.
+    If user_id is provided, associates the vehicle with that specific user.
     """
     plate_number = clean_plate_text(plate_number)
+    target_user = None
+    if user_id:
+        target_user = db.session.get(User, user_id) if hasattr(db.session, 'get') else User.query.get(user_id)
+
     vehicle = Vehicle.query.filter_by(vehicle_number=plate_number).first()
     if vehicle:
+        if target_user and vehicle.owner and vehicle.owner.email == 'walkin@smartpark.com':
+            vehicle.user_id = target_user.id
+            db.session.flush()
+            return target_user, vehicle
         return vehicle.owner, vehicle
 
-    # Get system walkin user or default admin
-    walkin_user = User.query.filter_by(email='walkin@smartpark.com').first()
-    if not walkin_user:
-        walkin_user = User(
-            full_name="Walk-In Guest",
-            email="walkin@smartpark.com",
-            phone="+91 0000000000",
-            role="user",
-            is_active=True
-        )
-        walkin_user.set_password("walkin123")
-        db.session.add(walkin_user)
-        db.session.flush()
+    if not target_user:
+        target_user = User.query.filter_by(email='walkin@smartpark.com').first()
+        if not target_user:
+            target_user = User(
+                full_name="Walk-In Guest",
+                email="walkin@smartpark.com",
+                phone="+91 0000000000",
+                role="user",
+                is_active=True
+            )
+            target_user.set_password("walkin123")
+            db.session.add(target_user)
+            db.session.flush()
 
     vehicle = Vehicle(
-        user_id=walkin_user.id,
+        user_id=target_user.id,
         vehicle_number=plate_number,
         vehicle_type="Car",
         model="Auto-Registered Vehicle",
-        nickname="Scanned Plate"
+        nickname=f"Vehicle {plate_number[-4:] if len(plate_number)>=4 else plate_number}"
     )
     db.session.add(vehicle)
     db.session.flush()
-    return walkin_user, vehicle
+    return target_user, vehicle
 
-def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_type='ENTRY'):
+def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_type='ENTRY', user_id=None):
     """
     Business logic for ANPR plate recognition event.
     Auto-registers number plate in database, tracks live entry timestamp, handles online bookings & exit calculations.
@@ -294,9 +512,14 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
     # Auto-register vehicle in database if not present
     vehicle = Vehicle.query.filter_by(vehicle_number=plate_number).first()
     if not vehicle:
-        user, vehicle = get_or_create_walkin_user_and_vehicle(plate_number)
+        user, vehicle = get_or_create_walkin_user_and_vehicle(plate_number, user_id=user_id)
         db.session.commit()
     else:
+        if user_id:
+            logged_in_user = db.session.get(User, user_id) if hasattr(db.session, 'get') else User.query.get(user_id)
+            if logged_in_user and vehicle.owner and vehicle.owner.email == 'walkin@smartpark.com':
+                vehicle.user_id = logged_in_user.id
+                db.session.commit()
         user = vehicle.owner
 
     # Search for active/confirmed booking at this location for this vehicle
@@ -458,25 +681,66 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
     db.session.add(act_log)
     db.session.commit()
 
-    # Real-time WebSocket Alert to Admin
-    broadcast_anpr_event({
-        'anpr_id': anpr_log.id,
-        'detected_plate': plate_number,
-        'location_name': location.name,
-        'action_taken': action_taken,
-        'entry_time': live_entry_str,
-        'total_fee': total_fee,
-        'booking_ref': matched_booking.booking_reference if matched_booking else None,
-        'slot_number': matched_booking.slot.slot_number if (matched_booking and matched_booking.slot) else None,
-        'timestamp': datetime.now().strftime('%H:%M:%S')
-    })
+    # Calculate fresh platform KPI metrics for real-time dashboard updates
+    all_slots = ParkingSlot.query.all()
+    total_slots_count = len(all_slots)
+    free_slots_count = sum(1 for s in all_slots if s.status == 'FREE')
+    occupied_slots_count = sum(1 for s in all_slots if s.status == 'OCCUPIED')
+    reserved_slots_count = sum(1 for s in all_slots if s.status == 'RESERVED')
+    active_bks_count = Booking.query.filter(Booking.status.in_(['CONFIRMED', 'ACTIVE', 'RESERVED'])).count()
+
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_revenue = db.session.query(db.func.sum(Invoice.total_amount))\
+        .filter(Invoice.created_at >= today_start, Invoice.invoice_status != 'CANCELLED').scalar() or 0.0
 
     entry_time_display = live_entry_str
     exit_time_display = now_local.strftime('%b %d, %Y - %I:%M:%S %p') if (camera_type == 'EXIT') else None
 
+    # Real-time WebSocket Alert to Admin and User Dashboards
+    broadcast_anpr_event({
+        'anpr_id': anpr_log.id,
+        'detected_plate': plate_number,
+        'location_name': location.name,
+        'location_id': location.id,
+        'action_taken': action_taken,
+        'camera_type': camera_type,
+        'entry_time': live_entry_str,
+        'exit_time': exit_time_display,
+        'total_fee': total_fee,
+        'duration_hours': duration_hrs,
+        'booking_id': matched_booking.id if matched_booking else None,
+        'booking_ref': matched_booking.booking_reference if matched_booking else None,
+        'slot_number': matched_booking.slot.slot_number if (matched_booking and matched_booking.slot) else None,
+        'slot_id': matched_booking.slot_id if matched_booking else None,
+        'user_id': user.id if user else None,
+        'user_name': user.full_name if user else 'Walk-In Guest',
+        'vehicle_id': vehicle.id if vehicle else None,
+        'vehicle_number': vehicle.vehicle_number if vehicle else plate_number,
+        'vehicle_type': vehicle.vehicle_type if vehicle else 'Car',
+        'vehicle_model': vehicle.model if vehicle else 'Auto-Registered Vehicle',
+        'timestamp': datetime.now().strftime('%H:%M:%S'),
+        'kpis': {
+            'total_slots': total_slots_count,
+            'available_slots': free_slots_count,
+            'occupied_slots': occupied_slots_count,
+            'reserved_slots': reserved_slots_count,
+            'active_bookings': active_bks_count,
+            'today_revenue': float(today_revenue)
+        }
+    })
+
+    if matched_booking and matched_booking.slot:
+        from services.socket_service import socketio
+        socketio.emit('slot_updated', {
+            'location_id': location.id,
+            'slot_id': matched_booking.slot.id,
+            'status': matched_booking.slot.status
+        })
+
     return True, message, {
         'anpr_id': anpr_log.id,
         'plate': plate_number,
+        'user_id': user.id if user else None,
         'confidence': confidence,
         'action': action_taken,
         'status': status_code,
@@ -486,6 +750,7 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
         'duration_hours': duration_hrs,
         'hourly_rate': location.hourly_rate,
         'total_fee': total_fee,
+        'booking_id': matched_booking.id if matched_booking else None,
         'booking_reference': matched_booking.booking_reference if matched_booking else None,
         'slot_number': matched_booking.slot.slot_number if (matched_booking and matched_booking.slot) else None,
         'invoice_id': matched_booking.invoice.id if (matched_booking and matched_booking.invoice) else None

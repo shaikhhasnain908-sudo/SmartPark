@@ -143,16 +143,30 @@ def my_vehicles():
         nickname = request.form.get('nickname', '').strip()
 
         if vehicle_number:
-            v = Vehicle(
-                user_id=user.id,
-                vehicle_number=vehicle_number,
-                vehicle_type=vehicle_type,
-                model=model,
-                nickname=nickname
-            )
-            db.session.add(v)
-            db.session.commit()
-            flash('Vehicle added successfully!', 'success')
+            existing = Vehicle.query.filter_by(vehicle_number=vehicle_number).first()
+            if existing:
+                if existing.user_id == user.id:
+                    flash('Vehicle is already registered under your account.', 'info')
+                else:
+                    existing.user_id = user.id
+                    existing.vehicle_type = vehicle_type
+                    if model:
+                        existing.model = model
+                    if nickname:
+                        existing.nickname = nickname
+                    db.session.commit()
+                    flash('Vehicle registered and linked to your account!', 'success')
+            else:
+                v = Vehicle(
+                    user_id=user.id,
+                    vehicle_number=vehicle_number,
+                    vehicle_type=vehicle_type,
+                    model=model,
+                    nickname=nickname
+                )
+                db.session.add(v)
+                db.session.commit()
+                flash('Vehicle added successfully!', 'success')
             
         return redirect(url_for('user.my_vehicles'))
 

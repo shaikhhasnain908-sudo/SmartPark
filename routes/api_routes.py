@@ -50,10 +50,13 @@ def process_frame():
     camera_type = data.get('camera_type', 'ENTRY')
     manual_plate = data.get('manual_plate')
 
+    user = get_current_user()
+    user_id = user.id if user else (session.get('user_id') or data.get('user_id'))
+
     if not base64_frame and not manual_plate:
         return jsonify({'success': False, 'message': 'No video frame or manual license plate provided'}), 400
 
-    success, message, result = process_anpr_frame(location_id, base64_frame, camera_type, manual_plate)
+    success, message, result = process_anpr_frame(location_id, base64_frame, camera_type, manual_plate, user_id=user_id)
     return jsonify({
         'success': success,
         'message': message,
@@ -71,6 +74,9 @@ def upload_scan_image():
     camera_type = request.form.get('camera_type', 'ENTRY')
     manual_plate = request.form.get('manual_plate', '')
 
+    user = get_current_user()
+    user_id = user.id if user else (session.get('user_id') or request.form.get('user_id', type=int))
+
     base64_frame = None
 
     if 'file' in request.files:
@@ -86,8 +92,10 @@ def upload_scan_image():
         manual_plate = data.get('manual_plate', '')
         location_id = data.get('location_id', location_id)
         camera_type = data.get('camera_type', camera_type)
+        if not user_id:
+            user_id = data.get('user_id')
 
-    success, message, result = process_anpr_frame(location_id, base64_frame, camera_type, manual_plate)
+    success, message, result = process_anpr_frame(location_id, base64_frame, camera_type, manual_plate, user_id=user_id)
     return jsonify({
         'success': success,
         'message': message,
@@ -102,10 +110,13 @@ def simulate_anpr():
     plate_number = (data.get('plate_number') or '').strip()
     camera_type = data.get('camera_type', 'ENTRY')
 
+    user = get_current_user()
+    user_id = user.id if user else (session.get('user_id') or data.get('user_id'))
+
     if not plate_number:
         return jsonify({'success': False, 'message': 'License plate number is required'}), 400
 
-    success, message, result = process_anpr_plate_logic(location_id, plate_number, 0.95, camera_type)
+    success, message, result = process_anpr_plate_logic(location_id, plate_number, 0.95, camera_type, user_id=user_id)
     return jsonify({
         'success': success,
         'message': message,

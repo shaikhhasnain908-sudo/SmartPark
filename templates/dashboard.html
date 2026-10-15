@@ -40,62 +40,112 @@
   </div>
 
   <!-- Active Booking Section -->
-  <div class="glass-card" style="padding: 24px; margin-bottom: 32px; border-left: 4px solid var(--primary); background: radial-gradient(circle at top right, rgba(59, 130, 246, 0.1) 0%, rgba(15, 23, 42, 0.9) 100%);">
+  <div id="user-active-booking-container" class="glass-card" style="padding: 24px; margin-bottom: 32px; border-left: 4px solid var(--primary); background: radial-gradient(circle at top right, rgba(59, 130, 246, 0.1) 0%, rgba(15, 23, 42, 0.9) 100%); transition: all 0.3s ease;">
     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
       <h2 style="font-size: 1.25rem; display: flex; align-items: center; gap: 8px;">
         <i class="fa-solid fa-circle-dot" style="color: var(--success); font-size: 0.9rem;"></i> ACTIVE BOOKING
       </h2>
-      {% if active_booking %}
-        <span class="badge badge-success">{{ active_booking.status }}</span>
-      {% else %}
-        <span class="badge badge-info">NO ACTIVE BOOKING</span>
-      {% endif %}
+      <span id="user-active-badge" class="badge {% if active_booking %}badge-success{% else %}badge-info{% endif %}">
+        {% if active_booking %}{{ active_booking.status }}{% else %}NO ACTIVE BOOKING{% endif %}
+      </span>
     </div>
 
-    {% if active_booking %}
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 20px;">
-        <div>
-          <div style="font-size: 0.8rem; color: var(--text-muted);">PARKING LOCATION</div>
-          <div style="font-size: 1.1rem; font-weight: 700;">{{ active_booking.location.name }}</div>
+    <div id="user-active-booking-body">
+      {% if active_booking %}
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 20px;">
+          <div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">PARKING LOCATION</div>
+            <div style="font-size: 1.1rem; font-weight: 700;">{{ active_booking.location.name }}</div>
+          </div>
+
+          <div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">SLOT ASSIGNED</div>
+            <div style="font-size: 1.3rem; font-weight: 800; color: var(--primary);">{{ active_booking.slot.slot_number }}</div>
+          </div>
+
+          <div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">VEHICLE NUMBER</div>
+            <div style="font-size: 1.1rem; font-weight: 700; color: var(--accent-cyan);">{{ active_booking.vehicle.vehicle_number }}</div>
+          </div>
+
+          <div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">BOOKING TIME</div>
+            <div style="font-size: 0.95rem; font-weight: 600;">{{ active_booking.start_time.strftime('%I:%M %p | %b %d') }}</div>
+          </div>
+
+          <div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">VALID UNTIL</div>
+            <div style="font-size: 0.95rem; font-weight: 600; color: var(--warning);">{{ active_booking.end_time.strftime('%I:%M %p | %b %d') }}</div>
+          </div>
         </div>
 
-        <div>
-          <div style="font-size: 0.8rem; color: var(--text-muted);">SLOT ASSIGNED</div>
-          <div style="font-size: 1.3rem; font-weight: 800; color: var(--primary);">{{ active_booking.slot.slot_number }}</div>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <a href="{{ url_for('user.view_booking', booking_id=active_booking.id) }}" class="btn btn-primary">
+            <i class="fa-solid fa-file-invoice"></i> View Booking & Invoice
+          </a>
+          <form method="POST" action="{{ url_for('user.cancel_user_booking', booking_id=active_booking.id) }}" onsubmit="return confirm('Are you sure you want to cancel this booking?');">
+            <button type="submit" class="btn btn-danger">
+              <i class="fa-solid fa-ban"></i> Cancel Booking
+            </button>
+          </form>
         </div>
-
-        <div>
-          <div style="font-size: 0.8rem; color: var(--text-muted);">VEHICLE NUMBER</div>
-          <div style="font-size: 1.1rem; font-weight: 700;">{{ active_booking.vehicle.vehicle_number }}</div>
+      {% else %}
+        <div id="no-active-booking-msg">
+          <p style="color: var(--text-muted);">You currently have no active or reserved parking slots.</p>
+          <div style="display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap;">
+            <a href="{{ url_for('user.user_camera') }}" class="btn btn-primary">
+              <i class="fa-solid fa-camera"></i> Scan Plate to Park
+            </a>
+            <a href="{{ url_for('user.find_parking') }}" class="btn btn-secondary">
+              <i class="fa-solid fa-magnifying-glass"></i> Search Nearby Parking
+            </a>
+          </div>
         </div>
+      {% endif %}
+    </div>
+  </div>
 
-        <div>
-          <div style="font-size: 0.8rem; color: var(--text-muted);">BOOKING TIME</div>
-          <div style="font-size: 0.95rem; font-weight: 600;">{{ active_booking.start_time.strftime('%I:%M %p | %b %d') }}</div>
-        </div>
-
-        <div>
-          <div style="font-size: 0.8rem; color: var(--text-muted);">VALID UNTIL</div>
-          <div style="font-size: 0.95rem; font-weight: 600; color: var(--warning);">{{ active_booking.end_time.strftime('%I:%M %p | %b %d') }}</div>
-        </div>
-      </div>
-
-      <div style="display: flex; gap: 12px;">
-        <a href="{{ url_for('user.view_booking', booking_id=active_booking.id) }}" class="btn btn-primary">
-          <i class="fa-solid fa-file-invoice"></i> View Booking & Invoice
+  <!-- My Registered Vehicles & Scanned Number Plates Section -->
+  <div class="glass-card" style="padding: 24px; margin-bottom: 32px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+      <h3 style="font-size: 1.2rem; display: flex; align-items: center; gap: 8px;">
+        <i class="fa-solid fa-car-side" style="color: var(--accent-cyan);"></i> My Registered Vehicles & Number Plates
+        <span id="user-vehicles-count" class="badge badge-info" style="font-size: 0.8rem;">{{ vehicles | length }}</span>
+      </h3>
+      <div style="display: flex; gap: 10px;">
+        <a href="{{ url_for('user.user_camera') }}" class="btn btn-success" style="padding: 6px 14px; font-size: 0.85rem;">
+          <i class="fa-solid fa-camera"></i> Scan & Add Plate
         </a>
-        <form method="POST" action="{{ url_for('user.cancel_user_booking', booking_id=active_booking.id) }}" onsubmit="return confirm('Are you sure you want to cancel this booking?');">
-          <button type="submit" class="btn btn-danger">
-            <i class="fa-solid fa-ban"></i> Cancel Booking
-          </button>
-        </form>
+        <a href="{{ url_for('user.my_vehicles') }}" class="btn btn-secondary" style="padding: 6px 14px; font-size: 0.85rem;">
+          <i class="fa-solid fa-plus"></i> Add Manually
+        </a>
       </div>
-    {% else %}
-      <p style="color: var(--text-muted);">You currently have no active or reserved parking slots.</p>
-      <a href="{{ url_for('user.find_parking') }}" class="btn btn-secondary" style="margin-top: 12px;">
-        <i class="fa-solid fa-magnifying-glass"></i> Search Nearby Parking
-      </a>
-    {% endif %}
+    </div>
+
+    <div id="user-vehicles-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px;">
+      {% for v in vehicles %}
+        <div class="user-vehicle-card" id="vehicle-card-{{ v.vehicle_number }}" style="background: rgba(30, 41, 59, 0.6); padding: 18px; border-radius: var(--radius-sm); border: 1px solid var(--border); transition: all 0.3s ease;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span class="badge badge-info">{{ v.vehicle_type }}</span>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">{{ v.nickname or 'Vehicle' }}</span>
+          </div>
+          <div style="font-size: 1.35rem; font-weight: 800; color: #fff; letter-spacing: 0.05em; margin-bottom: 4px;">{{ v.vehicle_number }}</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; color: var(--text-muted);">
+            <span>{{ v.model or 'Registered' }}</span>
+            {% if active_booking and active_booking.vehicle_id == v.id %}
+              <span class="badge badge-success" style="font-size: 0.72rem;">PARKED ({{ active_booking.slot.slot_number }})</span>
+            {% else %}
+              <span class="badge badge-secondary" style="font-size: 0.72rem;">READY</span>
+            {% endif %}
+          </div>
+        </div>
+      {% else %}
+        <div id="no-vehicles-msg" style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 20px;">
+          <i class="fa-solid fa-car-tunnel" style="font-size: 2rem; margin-bottom: 8px; display: block; opacity: 0.5;"></i>
+          No vehicles registered yet. Scan a number plate or add one above!
+        </div>
+      {% endfor %}
+    </div>
   </div>
 
   <!-- Recent Bookings Table -->
@@ -116,9 +166,9 @@
             <th>Action</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="user-recent-bookings-body">
           {% for b in recent_bookings %}
-            <tr>
+            <tr id="booking-row-{{ b.booking_reference }}">
               <td><strong>#{{ b.booking_reference }}</strong></td>
               <td>{{ b.created_at.strftime('%b %d, %Y') }}</td>
               <td>{{ b.location.name }}</td>
@@ -135,7 +185,7 @@
               </td>
             </tr>
           {% else %}
-            <tr>
+            <tr id="no-bookings-row">
               <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 20px;">No previous booking records found.</td>
             </tr>
           {% endfor %}

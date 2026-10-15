@@ -3,6 +3,13 @@
 {% block title %}ANPR & License Plate Recognition - SmartPark{% endblock %}
 
 {% block content %}
+<style>
+@keyframes laserSweep {
+  0% { top: 4%; opacity: 0.85; }
+  50% { top: 92%; opacity: 1; }
+  100% { top: 4%; opacity: 0.85; }
+}
+</style>
 <div class="container" style="padding-top: 30px; padding-bottom: 60px;">
   
   <div style="margin-bottom: 24px; text-align: center;">
@@ -43,12 +50,14 @@
         <div style="position: relative; background: #000; border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 20px; height: 380px; display: flex; align-items: center; justify-content: center;">
           <video id="webcam-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
           
-          <div id="scan-overlay" style="position: absolute; border: 2px dashed var(--accent-cyan); width: 60%; height: 35%; border-radius: 8px; box-shadow: 0 0 15px rgba(6,186,212,0.4); display: flex; align-items: center; justify-content: center; color: var(--accent-cyan); font-weight: 700; font-size: 0.85rem; pointer-events: none;">
-            ALIGN LICENSE PLATE HERE
+          <div id="scan-overlay" style="position: absolute; border: 2px dashed var(--accent-cyan); width: 62%; height: 38%; border-radius: 8px; box-shadow: 0 0 18px rgba(6,186,212,0.45); display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--accent-cyan); font-weight: 700; font-size: 0.88rem; pointer-events: none; transition: all 0.3s ease; text-align: center; padding: 8px; background: rgba(0,0,0,0.15); overflow: hidden;">
+            <div id="scan-laser" style="display: none; position: absolute; left: 0; right: 0; height: 2px; background: #06b6d4; box-shadow: 0 0 8px #06b6d4, 0 0 16px #06b6d4; animation: laserSweep 2s infinite ease-in-out;"></div>
+            <span id="scan-overlay-title"><i class="fa-solid fa-crosshairs"></i> ALIGN LICENSE PLATE HERE</span>
+            <span id="scan-overlay-hint" style="font-size: 0.72rem; color: rgba(255,255,255,0.75); font-weight: 500; margin-top: 4px;">Hold phone or car plate steady inside this box</span>
           </div>
         </div>
 
-        <div style="display: flex; justify-content: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
+        <div style="display: flex; justify-content: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
           <button onclick="startCam()" class="btn btn-primary">
             <i class="fa-solid fa-video"></i> Start Camera
           </button>
@@ -64,6 +73,11 @@
           <button onclick="toggleAutoScan()" id="auto-scan-btn" class="btn btn-secondary" disabled>
             <i class="fa-solid fa-robot"></i> Auto-Scan: OFF
           </button>
+        </div>
+
+        <div style="text-align: center; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 20px; background: rgba(30, 41, 59, 0.5); padding: 8px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06); max-width: 650px; margin-left: auto; margin-right: auto;">
+          <i class="fa-solid fa-lightbulb" style="color: #f59e0b; margin-right: 4px;"></i>
+          <span><strong>Tips for 100% Character Accuracy:</strong> Position the plate so characters fill at least 50% of the box. Keep phone screen brightness around 60% to prevent glare reflections.</span>
         </div>
       </div>
 
@@ -176,7 +190,9 @@
         document.getElementById('scan-entry-btn').disabled = false;
         document.getElementById('scan-exit-btn').disabled = false;
         document.getElementById('auto-scan-btn').disabled = false;
-        showToast("Camera Active", "Webcam stream initialized successfully.", "success");
+        const laser = document.getElementById('scan-laser');
+        if (laser) laser.style.display = 'block';
+        showToast("Camera Active", "Webcam stream initialized. Align plate inside box.", "success");
       } else {
         showToast("Camera Error", err || "Permission denied", "danger");
       }
@@ -193,6 +209,8 @@
     autoBtn.innerText = "Auto-Scan: OFF";
     autoBtn.classList.remove('btn-success');
     autoBtn.classList.add('btn-secondary');
+    const laser = document.getElementById('scan-laser');
+    if (laser) laser.style.display = 'none';
     showToast("Camera Stopped", "Camera stream released.", "info");
   }
 
@@ -213,11 +231,29 @@
     const gridEl = document.getElementById('result-details-grid');
     const actionsEl = document.getElementById('result-actions');
     const badgeEl = document.getElementById('result-status-badge');
+    const overlay = document.getElementById('scan-overlay');
+    const overlayTitle = document.getElementById('scan-overlay-title');
+    const overlayHint = document.getElementById('scan-overlay-hint');
 
     card.style.display = 'block';
     msgEl.innerText = msg;
     badgeEl.innerText = success ? 'SUCCESS' : 'WARNING';
     badgeEl.className = `badge ${success ? 'badge-success' : 'badge-warning'}`;
+
+    if (success && data && data.plate && overlay && overlayTitle) {
+      overlay.style.borderColor = '#10b981';
+      overlay.style.boxShadow = '0 0 25px rgba(16,185,129,0.7)';
+      overlay.style.background = 'rgba(16,185,129,0.15)';
+      overlayTitle.innerHTML = `<i class="fa-solid fa-circle-check" style="color: #10b981;"></i> DETECTED: ${data.plate}`;
+      if (overlayHint) overlayHint.innerText = 'Plate successfully read & verified in database!';
+      setTimeout(() => {
+        overlay.style.borderColor = 'var(--accent-cyan)';
+        overlay.style.boxShadow = '0 0 18px rgba(6,186,212,0.45)';
+        overlay.style.background = 'rgba(0,0,0,0.15)';
+        overlayTitle.innerHTML = '<i class="fa-solid fa-crosshairs"></i> ALIGN LICENSE PLATE HERE';
+        if (overlayHint) overlayHint.innerText = 'Hold phone or car plate steady inside this box';
+      }, 4500);
+    }
 
     if (!success || (data && data.requires_manual_entry)) {
       const cameraType = (data && data.camera_type) ? data.camera_type : 'ENTRY';
@@ -269,15 +305,17 @@
         </div>
       `;
 
-      if (data.invoice_id) {
-        actionsEl.innerHTML = `
+      actionsEl.innerHTML = `
+        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 10px;">
+          <a href="/dashboard" class="btn btn-success">
+            <i class="fa-solid fa-gauge-high"></i> View on Live Dashboard
+          </a>
+          ${data.invoice_id ? `
           <a href="/api/invoices/${data.invoice_id}/pdf" class="btn btn-primary" target="_blank">
             <i class="fa-solid fa-file-pdf"></i> Download PDF Invoice
-          </a>
-        `;
-      } else {
-        actionsEl.innerHTML = '';
-      }
+          </a>` : ''}
+        </div>
+      `;
     }
   }
 
