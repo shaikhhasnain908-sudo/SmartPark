@@ -5,7 +5,7 @@ import base64
 import math
 import uuid
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from database import db
 from models import ANPRLog, Booking, ParkingSlot, ParkingLocation, Vehicle, User, Blacklist, ActivityLog, Invoice
 from services.invoice_service import generate_pdf_invoice
@@ -490,10 +490,40 @@ def get_or_create_walkin_user_and_vehicle(plate_number, user_id=None):
     db.session.flush()
     return target_user, vehicle
 
+def to_local_datetime(dt):
+    """
+    Normalizes any datetime (stored in UTC or naive local) into the actual local system datetime.
+    """
+    if dt is None:
+        return None
+    now_l = datetime.now()
+    now_u = datetime.utcnow()
+    offset = now_l - now_u
+    if abs(offset.total_seconds()) > 1800:
+        diff_from_utc = abs((now_u - dt).total_seconds())
+        diff_from_local = abs((now_l - dt).total_seconds())
+        if diff_from_utc < diff_from_local:
+            return dt + offset
+    return dt
+
+def format_duration_denotation(elapsed_seconds):
+    elapsed_seconds = max(0, elapsed_seconds)
+    hours = round(elapsed_seconds / 3600.0, 2)
+    if elapsed_seconds < 60:
+        return f"{int(elapsed_seconds)}s ({hours} hrs)", hours
+    elif elapsed_seconds < 3600:
+        mins = int(elapsed_seconds // 60)
+        secs = int(elapsed_seconds % 60)
+        return f"{mins}m {secs}s ({hours} hrs)", hours
+    else:
+        h = int(elapsed_seconds // 3600)
+        m = int((elapsed_seconds % 3600) // 60)
+        return f"{h}h {m}m ({hours} hrs)", hours
+
 def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_type='ENTRY', user_id=None):
     """
     Business logic for ANPR plate recognition event.
-    Auto-registers number plate in database, tracks live entry timestamp, handles online bookings & exit calculations.
+    Auto-registers number plate in database, tracks actual entry and exit timestamps, handles bookings & exit calculations.
     """
     plate_number = clean_plate_text(plate_number)
     if not plate_number:
@@ -542,28 +572,62 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
                 db.session.commit()
         user = vehicle.owner
 
-    # Search for active/confirmed booking at this location for this vehicle
+    # Search for active/confirmed booking for this vehicle:
+    # 1. Match by vehicle and target location
     matched_booking = Booking.query.filter(
         Booking.vehicle_id == vehicle.id,
         Booking.location_id == location_id,
         Booking.status.in_(['CONFIRMED', 'ACTIVE', 'RESERVED'])
     ).order_by(Booking.start_time.asc()).first()
 
-    now_utc = datetime.utcnow()
+    # 2. If not found, match by plate_number across any location
+    if not matched_booking:
+        matched_booking = Booking.query.join(Vehicle, Booking.vehicle_id == Vehicle.id).filter(
+            db.or_(
+                Booking.vehicle_id == vehicle.id,
+                Vehicle.vehicle_number == plate_number
+            ),
+            Booking.status.in_(['CONFIRMED', 'ACTIVE', 'RESERVED'])
+        ).order_by(Booking.start_time.asc()).first()
+
+    # 3. Check if any slot is currently held by this vehicle plate
+    if not matched_booking:
+        held_slot = ParkingSlot.query.filter(
+            ParkingSlot.current_vehicle_number == plate_number,
+            ParkingSlot.status.in_(['RESERVED', 'OCCUPIED'])
+        ).first()
+        if held_slot and held_slot.current_booking_id:
+            matched_booking = Booking.query.get(held_slot.current_booking_id)
+
+    # If booking is found at another location, switch location context accordingly
+    if matched_booking and matched_booking.location:
+        location = matched_booking.location
+        location_id = location.id
+        if matched_booking.user:
+            user = matched_booking.user
+
     now_local = datetime.now()
-    live_entry_str = now_local.strftime('%b %d, %Y - %I:%M:%S %p')
+    now_utc = datetime.utcnow()
     action_taken = "PROCESSED"
     message = ""
     status_code = "SUCCESS"
     total_fee = 0.0
     duration_hrs = 1.0
+    duration_display = "1.0 Hours"
+    freed_slots = []
 
     if camera_type == 'ENTRY':
+        actual_entry_dt = now_local
+        entry_time_display = actual_entry_dt.strftime('%b %d, %Y - %I:%M:%S %p')
+        exit_time_display = None
+        duration_display = "Active (Just entered)"
+
         if matched_booking:
             # Active or pre-booked reservation
             matched_booking.status = 'ACTIVE'
-            matched_booking.start_time = now_utc
-            matched_booking.entry_time = now_utc
+            matched_booking.start_time = actual_entry_dt
+            matched_booking.entry_time = actual_entry_dt
+            matched_booking.exit_time = None
             slot = ParkingSlot.query.get(matched_booking.slot_id)
             if slot:
                 slot.status = 'OCCUPIED'
@@ -571,7 +635,7 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
                 slot.current_booking_id = matched_booking.id
             action_taken = "ENTRY_GRANTED"
             total_fee = matched_booking.total_amount
-            message = f"✅ Access Granted! Vehicle {plate_number} registered & entered Slot {slot.slot_number if slot else 'N/A'} at {live_entry_str}"
+            message = f"✅ Access Granted! Vehicle {plate_number} registered & entered Slot {slot.slot_number if slot else 'N/A'} at {entry_time_display}"
         else:
             # Walk-in / Manual Gate Entry: allocate slot and register entry
             slot = ParkingSlot.query.filter_by(location_id=location_id, status='FREE').first()
@@ -585,9 +649,9 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
                 vehicle_id=vehicle.id,
                 location_id=location_id,
                 slot_id=slot.id,
-                start_time=now_utc,
-                entry_time=now_utc,
-                end_time=now_utc, # updated on exit
+                start_time=actual_entry_dt,
+                entry_time=actual_entry_dt,
+                end_time=actual_entry_dt + timedelta(hours=1.0),
                 duration_hours=1.0,
                 hourly_rate=location.hourly_rate,
                 total_amount=location.hourly_rate,
@@ -618,31 +682,102 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
 
             action_taken = "ENTRY_GRANTED"
             total_fee = location.hourly_rate
-            message = f"✅ Registered & Granted Entry! Vehicle {plate_number} assigned to Slot {slot.slot_number}. Live Entry: {live_entry_str}"
+            message = f"✅ Registered & Granted Entry! Vehicle {plate_number} assigned to Slot {slot.slot_number}. Live Entry: {entry_time_display}"
 
     else: # EXIT & FEE CALCULATION
+        freed_slots = []
+        actual_exit_dt = now_local
+        exit_time_display = actual_exit_dt.strftime('%b %d, %Y - %I:%M:%S %p')
+
+        # Determine actual entry datetime
+        actual_entry_dt = None
         if matched_booking:
-            start_time = matched_booking.entry_time or matched_booking.start_time or now_utc
-            matched_booking.exit_time = now_utc
-            elapsed_seconds = (now_utc - start_time).total_seconds()
-            duration_hrs = max(0.5, round(elapsed_seconds / 3600.0, 2))
-            billing_hours = max(1.0, math.ceil(duration_hrs))
-            
-            total_fee = round(billing_hours * location.hourly_rate, 2)
-            
-            matched_booking.end_time = now_utc
-            matched_booking.duration_hours = duration_hrs
+            raw_entry = matched_booking.entry_time or matched_booking.start_time
+            if raw_entry:
+                actual_entry_dt = to_local_datetime(raw_entry)
+
+        # Fallback 1: check prior bookings for this vehicle
+        if not actual_entry_dt:
+            prior_bk = Booking.query.filter_by(vehicle_id=vehicle.id).order_by(Booking.id.desc()).first()
+            if prior_bk and (prior_bk.entry_time or prior_bk.start_time):
+                actual_entry_dt = to_local_datetime(prior_bk.entry_time or prior_bk.start_time)
+
+        # Fallback 2: check ANPRLog for most recent ENTRY_GRANTED
+        if not actual_entry_dt:
+            last_entry_log = ANPRLog.query.filter_by(
+                detected_plate=plate_number,
+                action_taken='ENTRY_GRANTED'
+            ).order_by(ANPRLog.timestamp.desc()).first()
+            if last_entry_log and last_entry_log.timestamp:
+                actual_entry_dt = to_local_datetime(last_entry_log.timestamp)
+
+        # Fallback 3: default to 15 minutes prior to avoid 0s or identical entry/exit
+        if not actual_entry_dt:
+            actual_entry_dt = actual_exit_dt - timedelta(minutes=15)
+
+        # Safety check: ensure entry time is not after exit time
+        if actual_entry_dt > actual_exit_dt:
+            actual_entry_dt = actual_exit_dt
+
+        entry_time_display = actual_entry_dt.strftime('%b %d, %Y - %I:%M:%S %p')
+
+        # Calculate accurate elapsed duration and fee
+        elapsed_seconds = max(0, (actual_exit_dt - actual_entry_dt).total_seconds())
+        duration_display, duration_hrs = format_duration_denotation(elapsed_seconds)
+        billing_hours = max(1.0, math.ceil(duration_hrs))
+        total_fee = round(billing_hours * location.hourly_rate, 2)
+
+        if matched_booking:
+            matched_booking.exit_time = actual_exit_dt
+            matched_booking.end_time = actual_exit_dt
+            matched_booking.duration_hours = max(0.1, duration_hrs)
             matched_booking.total_amount = total_fee
             matched_booking.status = 'COMPLETED'
 
-            slot = ParkingSlot.query.get(matched_booking.slot_id)
-            if slot:
-                slot.status = 'FREE'
-                slot.current_vehicle_number = None
-                slot.current_booking_id = None
+            if matched_booking.slot_id:
+                s = ParkingSlot.query.get(matched_booking.slot_id)
+                if s and s not in freed_slots:
+                    freed_slots.append(s)
 
-            location.available_slots = min(location.total_slots, location.available_slots + 1)
+        # Close any lingering active bookings for this vehicle
+        all_vehicle_bookings = Booking.query.filter(
+            Booking.vehicle_id == vehicle.id,
+            Booking.status.in_(['ACTIVE', 'CONFIRMED', 'RESERVED'])
+        ).all()
+        for ob in all_vehicle_bookings:
+            ob.status = 'COMPLETED'
+            ob.exit_time = actual_exit_dt
+            ob.end_time = actual_exit_dt
+            if ob.slot_id:
+                s = ParkingSlot.query.get(ob.slot_id)
+                if s and s not in freed_slots:
+                    freed_slots.append(s)
 
+        # In addition, free any slots held by this vehicle or booking
+        candidate_slots = ParkingSlot.query.filter(
+            db.or_(
+                ParkingSlot.current_vehicle_number == plate_number,
+                ParkingSlot.current_booking_id == (matched_booking.id if matched_booking else -1)
+            )
+        ).all()
+        for cs in candidate_slots:
+            if cs not in freed_slots:
+                freed_slots.append(cs)
+
+        # Mark all associated slots as completely FREE
+        for s in freed_slots:
+            s.status = 'FREE'
+            s.current_vehicle_number = None
+            s.current_booking_id = None
+
+        # Recalculate available slots accurately for all affected locations
+        affected_loc_ids = set([location.id] + [s.location_id for s in freed_slots])
+        for a_loc_id in affected_loc_ids:
+            a_loc = ParkingLocation.query.get(a_loc_id)
+            if a_loc:
+                a_loc.available_slots = ParkingSlot.query.filter_by(location_id=a_loc.id, status='FREE').count()
+
+        if matched_booking:
             # Update Invoice
             invoice = matched_booking.invoice
             if not invoice:
@@ -670,14 +805,13 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
                 print(f"[CV Service] Invoice PDF generation notice: {pe}")
 
             action_taken = "EXIT_COMPLETED"
-            message = f"🚗 Exit Confirmed for Vehicle {plate_number}! Stay Duration: {duration_hrs} hrs. Total Fee: ₹{total_fee}"
+            slot_name = freed_slots[0].slot_number if freed_slots else (matched_booking.slot.slot_number if matched_booking.slot else 'Assigned Slot')
+            message = f"🚗 Exit Confirmed for Vehicle {plate_number}! Slot {slot_name} is now FREE for other customers. Stay Duration: {duration_display}. Total Fee: ₹{total_fee}"
         else:
-            # Vehicle exit with no active booking recorded: calculate baseline exit fee
+            # Walk-in exit with no active booking recorded: calculate baseline exit fee
             user, vehicle = get_or_create_walkin_user_and_vehicle(plate_number)
-            total_fee = location.hourly_rate
-            duration_hrs = 1.0
             action_taken = "EXIT_COMPLETED"
-            message = f"🚗 Exit Processed for Vehicle {plate_number}. Direct Parking Fee: ₹{total_fee}"
+            message = f"🚗 Exit Processed for Vehicle {plate_number}. Slot freed & ready for next customer. Stay Duration: {duration_display}. Direct Parking Fee: ₹{total_fee}"
 
     db.session.commit()
 
@@ -695,7 +829,7 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
     act_log = ActivityLog(
         user_type='system',
         action=f"ANPR_{camera_type}",
-        description=f"ANPR scanned {plate_number} at {location.name}. Action: {action_taken} | Live Entry: {live_entry_str} | Fee: ₹{total_fee}",
+        description=f"ANPR scanned {plate_number} at {location.name}. Action: {action_taken} | Entry: {entry_time_display} | Exit: {exit_time_display or 'N/A'} | Stay: {duration_display} | Fee: ₹{total_fee}",
         related_id=anpr_log.id
     )
     db.session.add(act_log)
@@ -713,10 +847,8 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
     today_revenue = db.session.query(db.func.sum(Invoice.total_amount))\
         .filter(Invoice.created_at >= today_start, Invoice.invoice_status != 'CANCELLED').scalar() or 0.0
 
-    entry_time_display = live_entry_str
-    exit_time_display = now_local.strftime('%b %d, %Y - %I:%M:%S %p') if (camera_type == 'EXIT') else None
-
     # Real-time WebSocket Alert to Admin and User Dashboards
+    primary_slot = freed_slots[0] if freed_slots else (matched_booking.slot if (matched_booking and matched_booking.slot) else None)
     broadcast_anpr_event({
         'anpr_id': anpr_log.id,
         'detected_plate': plate_number,
@@ -724,14 +856,15 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
         'location_id': location.id,
         'action_taken': action_taken,
         'camera_type': camera_type,
-        'entry_time': live_entry_str,
+        'entry_time': entry_time_display,
         'exit_time': exit_time_display,
         'total_fee': total_fee,
         'duration_hours': duration_hrs,
+        'duration_display': duration_display,
         'booking_id': matched_booking.id if matched_booking else None,
         'booking_ref': matched_booking.booking_reference if matched_booking else None,
-        'slot_number': matched_booking.slot.slot_number if (matched_booking and matched_booking.slot) else None,
-        'slot_id': matched_booking.slot_id if matched_booking else None,
+        'slot_number': primary_slot.slot_number if primary_slot else None,
+        'slot_id': primary_slot.id if primary_slot else None,
         'user_id': user.id if user else None,
         'user_name': user.full_name if user else 'Walk-In Guest',
         'vehicle_id': vehicle.id if vehicle else None,
@@ -749,12 +882,37 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
         }
     })
 
-    if matched_booking and matched_booking.slot:
-        from services.socket_service import socketio
+    from services.socket_service import socketio
+    if camera_type == 'EXIT':
+        # Broadcast slot_updated for every freed slot
+        for s in freed_slots:
+            loc_avail = ParkingSlot.query.filter_by(location_id=s.location_id, status='FREE').count()
+            socketio.emit('slot_updated', {
+                'location_id': s.location_id,
+                'slot_id': s.id,
+                'slot_number': s.slot_number,
+                'status': 'FREE',
+                'available_slots': loc_avail
+            })
+        
+        # Broadcast booking cancelled/completed alert so user dashboard releases active card
+        if matched_booking:
+            socketio.emit('booking_cancelled_alert', {
+                'booking_id': matched_booking.id,
+                'booking_reference': matched_booking.booking_reference,
+                'location_id': matched_booking.location_id,
+                'slot_id': matched_booking.slot_id,
+                'user_id': user.id if user else None,
+                'cancelled_by': 'gate_exit',
+                'reason': f"Vehicle {plate_number} exited facility. Slot is now FREE."
+            })
+    elif matched_booking and matched_booking.slot:
         socketio.emit('slot_updated', {
             'location_id': location.id,
             'slot_id': matched_booking.slot.id,
-            'status': matched_booking.slot.status
+            'slot_number': matched_booking.slot.slot_number,
+            'status': matched_booking.slot.status,
+            'available_slots': free_slots_count
         })
 
     return True, message, {
@@ -768,11 +926,12 @@ def process_anpr_plate_logic(location_id, plate_number, confidence=0.9, camera_t
         'entry_time': entry_time_display,
         'exit_time': exit_time_display,
         'duration_hours': duration_hrs,
+        'duration_display': duration_display,
         'hourly_rate': location.hourly_rate,
         'total_fee': total_fee,
         'booking_id': matched_booking.id if matched_booking else None,
         'booking_reference': matched_booking.booking_reference if matched_booking else None,
-        'slot_number': matched_booking.slot.slot_number if (matched_booking and matched_booking.slot) else None,
+        'slot_number': (primary_slot.slot_number if primary_slot else (matched_booking.slot.slot_number if (matched_booking and matched_booking.slot) else None)),
         'invoice_id': matched_booking.invoice.id if (matched_booking and matched_booking.invoice) else None
     }
 
@@ -798,12 +957,12 @@ def calculate_parking_fee_for_plate(location_id, plate_number, estimated_hours=1
             Booking.status == 'ACTIVE'
         ).first()
 
-    now = datetime.utcnow()
     now_local = datetime.now()
     if active_booking:
-        entry_time_dt = active_booking.entry_time or active_booking.start_time or now
-        elapsed = (now - entry_time_dt).total_seconds()
-        duration_hrs = max(0.5, round(elapsed / 3600.0, 2))
+        raw_entry = active_booking.entry_time or active_booking.start_time
+        entry_time_dt = to_local_datetime(raw_entry) if raw_entry else now_local
+        elapsed = max(0, (now_local - entry_time_dt).total_seconds())
+        duration_display, duration_hrs = format_duration_denotation(elapsed)
         billing_hours = max(1.0, math.ceil(duration_hrs))
         total_fee = round(billing_hours * location.hourly_rate, 2)
         is_parked = True
@@ -815,6 +974,7 @@ def calculate_parking_fee_for_plate(location_id, plate_number, estimated_hours=1
         except (ValueError, TypeError):
             duration_hrs = 1.0
         billing_hours = max(1.0, math.ceil(duration_hrs))
+        duration_display, _ = format_duration_denotation(duration_hrs * 3600)
         total_fee = round(billing_hours * location.hourly_rate, 2)
         is_parked = False
         entry_time = now_local.strftime('%b %d, %Y - %I:%M:%S %p')
@@ -825,9 +985,12 @@ def calculate_parking_fee_for_plate(location_id, plate_number, estimated_hours=1
         'location_name': location.name,
         'hourly_rate': location.hourly_rate,
         'duration_hours': duration_hrs,
+        'duration_display': duration_display,
         'billing_hours': billing_hours,
         'total_fee': total_fee,
         'is_currently_parked': is_parked,
         'entry_time': entry_time,
+        'exit_time': now_local.strftime('%b %d, %Y - %I:%M:%S %p') if is_parked else None,
         'slot_number': slot_number
     }
+

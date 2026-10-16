@@ -107,7 +107,9 @@ def generate_pdf_invoice(booking, invoice):
             <b>Location:</b> {booking.location.name}<br/>
             <b>Address:</b> {booking.location.address}<br/>
             <b>Slot Assigned:</b> <font color='#2563eb'><b>{booking.slot.slot_number}</b></font><br/>
-            <b>Date:</b> {booking.start_time.strftime('%b %d, %Y')}
+            <b>Date:</b> {booking.start_time.strftime('%b %d, %Y')}<br/>
+            <b>Gate Entry:</b> {booking.entry_time.strftime('%I:%M:%S %p') if booking.entry_time else 'N/A'}<br/>
+            <b>Gate Exit:</b> {booking.exit_time.strftime('%I:%M:%S %p') if booking.exit_time else 'Active'}
             """, normal_style)
         ]
     ]

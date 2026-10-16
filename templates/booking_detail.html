@@ -50,13 +50,25 @@
 
       <div style="background: rgba(30, 41, 59, 0.6); padding: 18px; border-radius: var(--radius-sm); margin-bottom: 28px;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.95rem;">
-          <span>Start Time:</span>
+          <span>Scheduled Start:</span>
           <strong>{{ booking.start_time.strftime('%b %d, %Y - %I:%M %p') }}</strong>
         </div>
+        {% if booking.entry_time %}
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.95rem; color: var(--accent-cyan);">
+          <span><i class="fa-solid fa-right-to-bracket"></i> Actual Gate Entry:</span>
+          <strong>{{ booking.entry_time.strftime('%b %d, %Y - %I:%M:%S %p') }}</strong>
+        </div>
+        {% endif %}
         <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.95rem;">
-          <span>End Time:</span>
+          <span>Scheduled End:</span>
           <strong>{{ booking.end_time.strftime('%b %d, %Y - %I:%M %p') }}</strong>
         </div>
+        {% if booking.exit_time %}
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.95rem; color: var(--success);">
+          <span><i class="fa-solid fa-right-from-bracket"></i> Actual Gate Exit:</span>
+          <strong>{{ booking.exit_time.strftime('%b %d, %Y - %I:%M:%S %p') }}</strong>
+        </div>
+        {% endif %}
         <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.95rem;">
           <span>Parking Rate:</span>
           <strong>₹{{ booking.hourly_rate }}/hour</strong>

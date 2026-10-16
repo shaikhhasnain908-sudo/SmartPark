@@ -309,22 +309,25 @@
           <div style="font-size: 0.75rem; color: var(--success); font-weight: 700; margin-top: 2px;">✔ VEHICLE REGISTERED IN DB</div>
         </div>
         <div>
-          <div style="font-size: 0.8rem; color: var(--text-muted);">ASSIGNED SLOT</div>
-          <div style="font-size: 1.35rem; font-weight: 800; color: var(--primary);">${data.slot_number || 'N/A'}</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">${data.exit_time ? 'FREED PARKING SLOT' : 'ASSIGNED SLOT'}</div>
+          <div style="font-size: 1.35rem; font-weight: 800; color: ${data.exit_time ? 'var(--success)' : 'var(--primary)'};">${data.slot_number || 'N/A'}</div>
+          ${data.exit_time ? '<div style="font-size: 0.75rem; color: var(--success); font-weight: 700; margin-top: 2px;">✔ SLOT FREED & AVAILABLE FOR NEXT USER</div>' : ''}
         </div>
         <div style="grid-column: span 2; background: rgba(6, 186, 212, 0.12); padding: 12px; border-radius: 6px; border-left: 4px solid var(--accent-cyan);">
-          <div style="font-size: 0.82rem; color: var(--accent-cyan); font-weight: 700;"><i class="fa-solid fa-clock"></i> LIVE ENTRY TIMESTAMP</div>
+          <div style="font-size: 0.82rem; color: var(--accent-cyan); font-weight: 700;">
+            <i class="fa-solid ${data.exit_time ? 'fa-right-to-bracket' : 'fa-clock'}"></i> ${data.exit_time ? 'ACTUAL RECORDED ENTRY TIMESTAMP' : 'LIVE ENTRY TIMESTAMP'}
+          </div>
           <div style="font-size: 1.15rem; font-weight: 800; color: #fff;">${data.entry_time || new Date().toLocaleString()}</div>
         </div>
         ${data.exit_time ? `
-        <div style="grid-column: span 2; background: rgba(239, 68, 68, 0.12); padding: 10px; border-radius: 6px; border-left: 4px solid var(--danger);">
-          <div style="font-size: 0.82rem; color: var(--danger); font-weight: 700;"><i class="fa-solid fa-right-from-bracket"></i> EXIT TIMESTAMP</div>
-          <div style="font-size: 1.05rem; font-weight: 800; color: #fff;">${data.exit_time}</div>
+        <div style="grid-column: span 2; background: rgba(16, 185, 129, 0.15); padding: 12px; border-radius: 6px; border-left: 4px solid var(--success);">
+          <div style="font-size: 0.82rem; color: var(--success); font-weight: 700;"><i class="fa-solid fa-right-from-bracket"></i> ACTUAL VEHICLE EXIT TIMESTAMP & SLOT RELEASE</div>
+          <div style="font-size: 1.15rem; font-weight: 800; color: #fff;">${data.exit_time} &bull; <span style="color:var(--success); font-weight:700;">Slot Released</span></div>
         </div>
         ` : ''}
         <div>
-          <div style="font-size: 0.8rem; color: var(--text-muted);">STAY DURATION</div>
-          <div style="font-size: 1.1rem; font-weight: 700; color: #fff;">${data.duration_hours || data.billing_hours || 1.0} Hours</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">${data.exit_time ? 'ACTUAL STAY DURATION' : 'PARKING STATUS'}</div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #fff;">${data.exit_time ? (data.duration_display || data.duration_hours + ' Hours') : (data.duration_display || 'Active (Just Entered)')}</div>
         </div>
         <div>
           <div style="font-size: 0.8rem; color: var(--text-muted);">TOTAL CALCULATED FEE</div>
@@ -337,8 +340,11 @@
           <a href="/dashboard" class="btn btn-success">
             <i class="fa-solid fa-gauge-high"></i> View on Live Dashboard
           </a>
+          <a href="/find-parking" class="btn btn-primary">
+            <i class="fa-solid fa-square-parking"></i> Find / Book Free Slots
+          </a>
           ${data.invoice_id ? `
-          <a href="/api/invoices/${data.invoice_id}/pdf" class="btn btn-primary" target="_blank">
+          <a href="/api/invoices/${data.invoice_id}/pdf" class="btn btn-secondary" target="_blank">
             <i class="fa-solid fa-file-pdf"></i> Download PDF Invoice
           </a>` : ''}
         </div>

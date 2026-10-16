@@ -621,3 +621,15 @@ function searchAddressOnMap(query) {
       if (window.showToast) showToast("Search Error", "Unable to connect to geocoding service.", "danger");
     });
 }
+
+// Global live availability updater for real-time WebSocket slot updates
+window.updateLocationAvailability = function(locationId, availableSlots) {
+  if (!allLocations || !allLocations.length) return;
+  const loc = allLocations.find(l => Number(l.id) === Number(locationId));
+  if (loc) {
+    loc.available_slots = Number(availableSlots);
+    renderMapMarkers();
+    renderLocationsSidebar();
+  }
+};
+

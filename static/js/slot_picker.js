@@ -13,24 +13,24 @@ function initSlotSelection() {
   const estimatedFeeDisplay = document.getElementById('estimated_fee');
   const confirmBtn = document.getElementById('confirm_booking_btn');
 
-  if (!slotBoxes.length) return;
+  // Event delegation on document so dynamically freed slots are instantly selectable
+  document.addEventListener('click', (e) => {
+    const box = e.target.closest('.slot-box.free');
+    if (!box) return;
 
-  slotBoxes.forEach(box => {
-    box.addEventListener('click', () => {
-      // Clear previous selection
-      slotBoxes.forEach(b => b.classList.remove('selected'));
+    // Clear previous selection
+    document.querySelectorAll('.slot-box').forEach(b => b.classList.remove('selected'));
 
-      // Mark current selected
-      box.classList.add('selected');
-      const slotId = box.getAttribute('data-slot-id');
-      const slotNum = box.getAttribute('data-slot-number');
+    // Mark current selected
+    box.classList.add('selected');
+    const slotId = box.getAttribute('data-slot-id');
+    const slotNum = box.getAttribute('data-slot-number');
 
-      if (selectedSlotInput) selectedSlotInput.value = slotId;
-      if (selectedSlotNumberDisplay) selectedSlotNumberDisplay.innerText = slotNum;
-      if (confirmBtn) confirmBtn.disabled = false;
+    if (selectedSlotInput) selectedSlotInput.value = slotId;
+    if (selectedSlotNumberDisplay) selectedSlotNumberDisplay.innerText = slotNum;
+    if (confirmBtn) confirmBtn.disabled = false;
 
-      updateFeeCalculation();
-    });
+    updateFeeCalculation();
   });
 
   if (durationInput) {

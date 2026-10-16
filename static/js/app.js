@@ -56,8 +56,41 @@ function initSocketIO() {
     }
   });
 
-  socket.on('booking_cancelled_alert', (data) => {
-    showToast(data.title, data.message, 'danger');
+  socket.on('booking_cancelled_alert', (evt) => {
+    const d = evt.data || evt;
+    showToast(evt.title || '⚠️ Booking Cancelled', evt.message || 'Parking slot has been released.', 'info');
+    
+    // If the cancelled/released booking belongs to current user or is active on dashboard
+    const activeContainer = document.getElementById('user-active-booking-container');
+    const activeBody = document.getElementById('user-active-booking-body');
+    const activeBadge = document.getElementById('user-active-badge');
+    const isThisUser = window.currentUserId && (Number(d.user_id) === Number(window.currentUserId));
+    
+    if (isThisUser && activeContainer && activeBody) {
+      activeContainer.classList.add('realtime-highlight');
+      if (activeBadge) {
+        activeBadge.className = 'badge badge-info';
+        activeBadge.innerText = 'NO ACTIVE BOOKING';
+      }
+      activeBody.innerHTML = `
+        <div id="no-active-booking-msg" class="realtime-highlight" style="padding: 12px; border-radius: 8px;">
+          <p style="color: var(--text-muted); margin-bottom: 12px;">✅ Your parking slot has been released and is now FREE for other customers.</p>
+          <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <a href="/find-parking" class="btn btn-primary">
+              <i class="fa-solid fa-magnifying-glass"></i> Find Nearby Parking
+            </a>
+            <a href="/camera" class="btn btn-secondary">
+              <i class="fa-solid fa-camera"></i> Scan Plate to Park
+            </a>
+          </div>
+        </div>
+      `;
+    }
+  });
+
+  // REAL-TIME SLOT STATUS UPDATES (FREES SLOTS FOR OTHER CUSTOMERS INSTANTLY)
+  socket.on('slot_updated', (slotData) => {
+    handleSlotRealtimeUpdate(slotData);
   });
 
   // REAL-TIME ANPR DETECTION EVENT FOR DASHBOARDS
@@ -69,6 +102,35 @@ function initSocketIO() {
     handleAdminRealtimeUpdates(d);
     handleUserRealtimeUpdates(d);
   });
+}
+
+function handleSlotRealtimeUpdate(data) {
+  if (!data) return;
+  const slotId = data.slot_id;
+  const status = (data.status || 'FREE').toUpperCase();
+  const locId = data.location_id;
+  const avail = data.available_slots;
+
+  // 1. Update interactive slot grid in booking.html (for any customer on the page)
+  const slotBoxes = document.querySelectorAll(`.slot-box[data-slot-id="${slotId}"]`);
+  slotBoxes.forEach(box => {
+    box.classList.remove('free', 'reserved', 'occupied', 'selected');
+    box.classList.add(status.toLowerCase());
+    const label = box.querySelector('.slot-status-label');
+    if (label) label.innerText = status;
+    box.classList.add('realtime-highlight');
+  });
+
+  // 2. Update map markers and sidebar if on find-parking page
+  if (window.updateLocationAvailability && locId && avail !== undefined) {
+    window.updateLocationAvailability(locId, avail);
+  }
+
+  // 3. Update any location availability badge
+  const locAvailEl = document.getElementById(`location-avail-${locId}`);
+  if (locAvailEl && avail !== undefined) {
+    locAvailEl.innerText = `${avail} available`;
+  }
 }
 
 function handleAdminRealtimeUpdates(d) {
@@ -141,8 +203,8 @@ function handleAdminRealtimeUpdates(d) {
     item.style.marginBottom = '8px';
     item.innerHTML = `
       <div style="font-weight: 700; color: #fff;">ANPR ${escapeHtml(d.action_taken || 'SCAN')}</div>
-      <div style="color: var(--text-muted); margin-top: 2px;">Plate <strong>${escapeHtml(d.detected_plate)}</strong> at ${escapeHtml(d.location_name || '')}. Slot: ${escapeHtml(d.slot_number || 'N/A')}. Fee: ₹${d.total_fee || 0}</div>
-      <div style="font-size: 0.75rem; color: var(--text-dark); margin-top: 4px;">${d.timestamp || new Date().toLocaleTimeString()}</div>
+      <div style="color: var(--text-muted); margin-top: 2px;">Plate <strong>${escapeHtml(d.detected_plate)}</strong> at ${escapeHtml(d.location_name || '')}. Slot: ${escapeHtml(d.slot_number || 'N/A')}. ${d.camera_type === 'EXIT' ? `Stay: <strong>${escapeHtml(d.duration_display || (d.duration_hours + ' hrs'))}</strong>.` : ''} Fee: ₹${d.total_fee || 0}</div>
+      <div style="font-size: 0.75rem; color: var(--text-dark); margin-top: 4px;">Entry: ${escapeHtml(d.entry_time || 'N/A')}${d.exit_time ? ` &bull; Exit: ${escapeHtml(d.exit_time)}` : ''}</div>
     `;
     feed.prepend(item);
   }
@@ -150,13 +212,13 @@ function handleAdminRealtimeUpdates(d) {
 
 function handleUserRealtimeUpdates(d) {
   // Check if current page is for the user who owns this vehicle or booking
-  const isCurrentUser = window.currentUserId && (Number(d.user_id) === Number(window.currentUserId));
+  const existingCard = d.detected_plate ? document.getElementById(`vehicle-card-${d.detected_plate}`) : null;
+  const isCurrentUser = (window.currentUserId && (Number(d.user_id) === Number(window.currentUserId))) || !!existingCard;
   if (!isCurrentUser) return;
 
   // 1. UPDATE USER DASHBOARD REGISTERED VEHICLES LIST
   const vehiclesGrid = document.getElementById('user-vehicles-grid');
   if (vehiclesGrid && d.detected_plate) {
-    const existingCard = document.getElementById(`vehicle-card-${d.detected_plate}`);
     if (existingCard) {
       existingCard.classList.add('realtime-highlight');
       const statusBadge = existingCard.querySelector('.badge-secondary, .badge-success');
@@ -168,7 +230,7 @@ function handleUserRealtimeUpdates(d) {
         } else if (d.action_taken === 'EXIT_COMPLETED') {
           statusBadge.className = 'badge badge-secondary';
           statusBadge.style.fontSize = '0.72rem';
-          statusBadge.innerText = 'READY';
+          statusBadge.innerText = 'READY (FREE)';
         }
       }
     } else {
@@ -268,22 +330,22 @@ function handleUserRealtimeUpdates(d) {
       activeContainer.classList.add('realtime-highlight');
       if (activeBadge) {
         activeBadge.className = 'badge badge-info';
-        activeBadge.innerText = 'COMPLETED';
+        activeBadge.innerText = 'SLOT FREED';
       }
 
       activeBody.innerHTML = `
-        <div class="realtime-highlight" style="padding: 16px; border-radius: 8px; background: rgba(6,186,212,0.1); border-left: 4px solid var(--accent-cyan);">
+        <div class="realtime-highlight" style="padding: 16px; border-radius: 8px; background: rgba(16,185,129,0.1); border-left: 4px solid var(--success);">
           <div style="font-weight: 700; font-size: 1.05rem; color: #fff; margin-bottom: 4px;">
-            🚗 Vehicle ${escapeHtml(d.detected_plate)} Exit Confirmed
+            🚗 Vehicle ${escapeHtml(d.detected_plate)} Exit Confirmed & Slot is Now FREE!
           </div>
           <div style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 12px;">
-            Stay Duration: <strong>${d.duration_hours || 1.0} hrs</strong> &bull; Total Paid: <strong>₹${d.total_fee}</strong>
+            Your assigned slot <strong>${escapeHtml(d.slot_number || 'Slot')}</strong> at <strong>${escapeHtml(d.location_name || 'Parking Hub')}</strong> has been released and is now FREE for other customers. Stay duration: <strong>${escapeHtml(d.duration_display || (d.duration_hours + ' hrs'))}</strong>. Entry: <strong>${escapeHtml(d.entry_time || 'N/A')}</strong> | Exit: <strong>${escapeHtml(d.exit_time || 'Just now')}</strong>. Total paid: <strong>₹${d.total_fee || 0}</strong>.
           </div>
           <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-            <a href="/find-parking" class="btn btn-secondary" style="padding: 6px 14px; font-size: 0.85rem;">
-              <i class="fa-solid fa-magnifying-glass"></i> Search Nearby Parking
+            <a href="/find-parking" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.85rem;">
+              <i class="fa-solid fa-magnifying-glass"></i> Book Another Parking Slot
             </a>
-            <a href="/camera" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.85rem;">
+            <a href="/camera" class="btn btn-secondary" style="padding: 6px 14px; font-size: 0.85rem;">
               <i class="fa-solid fa-camera"></i> Scan Another Vehicle
             </a>
           </div>

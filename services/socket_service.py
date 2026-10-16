@@ -34,7 +34,9 @@ def broadcast_booking_cancelled(cancel_data):
     socketio.emit('slot_updated', {
         'location_id': cancel_data['location_id'],
         'slot_id': cancel_data['slot_id'],
-        'status': 'FREE'
+        'slot_number': cancel_data.get('slot_number', ''),
+        'status': 'FREE',
+        'available_slots': cancel_data.get('available_slots')
     })
 
 def broadcast_anpr_event(anpr_data):

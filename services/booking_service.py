@@ -170,7 +170,7 @@ def cancel_booking(booking_id, cancelled_by='user', reason=None, user_id=None):
 
     location = ParkingLocation.query.get(booking.location_id)
     if location:
-        location.available_slots = min(location.total_slots, location.available_slots + 1)
+        location.available_slots = ParkingSlot.query.filter_by(location_id=location.id, status='FREE').count()
 
     # Cancel invoice
     if booking.invoice:
@@ -194,6 +194,9 @@ def cancel_booking(booking_id, cancelled_by='user', reason=None, user_id=None):
         'booking_reference': booking.booking_reference,
         'location_id': booking.location_id,
         'slot_id': booking.slot_id,
+        'slot_number': slot.slot_number if slot else None,
+        'available_slots': location.available_slots if location else None,
+        'user_id': booking.user_id,
         'cancelled_by': cancelled_by,
         'reason': booking.cancellation_reason
     })
